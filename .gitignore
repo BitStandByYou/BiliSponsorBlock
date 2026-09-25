@@ -1,0 +1,17 @@
+# Gradle / Kotlin 构建产物
+.gradle/
+build/
+app/build/
+.kotlin/
+
+# IDE / 本机配置
+local.properties
+*.iml
+.idea/
+.DS_Store
+
+# 签名密钥与口令 —— 绝不入库
+keystore.properties
+*.jks
+*.keystore
+*.pepk
