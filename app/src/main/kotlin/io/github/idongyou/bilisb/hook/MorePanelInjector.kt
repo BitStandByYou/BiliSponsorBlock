@@ -23,34 +23,37 @@ import java.lang.reflect.Method
 import java.lang.reflect.Proxy
 
 /**
- * 往宿主播放器「更多」面板（右上角「⋯」）注入一行「空降助手」。
+ * 往宿主播放器设置面板（右上角「⋯」弹出的 `VideoSettingDialog`）注入一行「空降助手」。
  *
- * ## 宿主契约（6.5.0 实测反汇编，classes12.dex）
+ * ## 宿主契约（9.12.0 实测反汇编）
  *
- * - 面板内容是一个 RecyclerView，适配器 `com.bilibili.app.gemini.ui.f`，
- *   全量刷新入口 `f0(List)`（把传入的 List 记为 `d` 字段，`getItemCount()` = `d.size()`）。
- * - 行条目接口 `com.bilibili.app.gemini.ui.i`（**interface**）：
- *     - `a()Ljava/lang/Object;` 默认返回 `getClass()`，作为"视图类型"注册表的 key；
- *     - `b(Landroid/content/Context;Landroid/view/ViewGroup;)Lcom/bilibili/app/gemini/ui/i$b;`
- *       —— **由条目自己构建行视图**（返回的 holder 只要 `getRoot()` 给个 View）；
- *     - `e(Lcom/bilibili/app/gemini/ui/i$b;Ldy1/b;)Ljava/lang/Object;` 绑定回调。
- * - 视图类型由 `i$a#a(item)` 动态分配：`registry.putIfAbsent(item.a(), nextType++)`，
- *   所以**任意新条目类都会自动拿到一个新 type**，无需预先注册；
- *   `onCreateViewHolder(parent, viewType)` 会反查 `d` 里 `a()` 命中该 type 的条目，再调它的 `b()`。
+ * - 面板是 `com.bilibili.playerbizcommonv2.widget.setting.channel.VideoSettingDialog`
+ *   （`ComponentDialog` + `RecyclerView`）；内容适配器是通用的
+ *   `com.bilibili.app.gemini.ui.f`，全量刷新入口 `updateData(List)`（把传入 List 记为字段 `c`）。
+ * - 行条目接口 `com.bilibili.app.gemini.ui.UIComponent`（**interface**）：
+ *     - `identityEqualityKey()` / `contentEqualityKey()` / `viewReusingKey()`：DiffUtil 与视图类型键；
+ *     - `createViewEntry(Context, ViewGroup): UIComponent$ViewEntry` —— **由条目自己构建行视图**；
+ *     - `bindToView(ViewEntry, Continuation)`：挂起绑定回调。
+ * - 视图类型由 `UIComponent$a.a(item)` 动态分配（`registry.putIfAbsent(key, nextType++)`），
+ *   任意新条目类都会自动拿到一个新 type；
+ *   `onCreateViewHolder` 会反查列表里 type 命中的条目，再调它的 `createViewEntry`。
  *
- * 结论：只要往 `f0` 的 List 里加一个实现 `i` 的条目（用 [Proxy] 实现，因为它是 interface，
- * 且 `i$b` 也是 interface），宿主就会用**我们自己的行视图**渲染它 —— 不需要新增任何依赖。
+ * 结论：只要往 `updateData` 的 List 里加一个实现 `UIComponent` 的代理条目
+ * （`ViewEntry` 也是 interface），宿主就会用**我们自己的行视图**渲染它。
  *
  * ## 为什么用「内容判据」而不是无脑注入
  *
- * 同一个 adapter `f` 也被**详情页**复用（真机实测：详情页 47 项、播放器面板 18 项）。
- * 这里只在列表里出现 `com.bilibili.playerbizcommonv2.widget.setting.` 包下的行时才注入。
+ * 同一个适配器 `f` 也被**视频详情页的简介列表**复用，所以只在列表里出现
+ * `com.bilibili.playerbizcommonv2.widget.setting.` 包下的行时才注入。
  */
 object MorePanelInjector {
 
     /** 我们这一行的标题与说明（点击后打开自研面板）。 */
     private const val ROW_TITLE = "空降助手"
     private const val ROW_SUBTITLE = "打开面板"
+
+    /** DiffUtil / 视图类型键：稳定且唯一即可。 */
+    private const val ROW_KEY = "bilisb:more:row"
 
     /**
      * 卡片外水平边距：宿主面板的白色卡片相对面板两侧的留白。
@@ -91,9 +94,12 @@ object MorePanelInjector {
         classLoader: ClassLoader,
         onOpenPanel: (host: Any) -> Unit,
     ) {
-        val adapterClass = HookResolve.findClass(classLoader, listOf(HostTargets.MORE_PANEL_ADAPTER_CLASS))
+        val adapterClass = HookResolve.findClass(
+            classLoader,
+            io.github.idongyou.bilisb.host.ResolvedTargets.effectiveMorePanelAdapterClasses,
+        )
         if (adapterClass == null) {
-            HookProbe.miss(module, "morePanelAdapter", HostTargets.MORE_PANEL_ADAPTER_CLASS)
+            HookProbe.miss(module, "morePanelAdapter", io.github.idongyou.bilisb.host.ResolvedTargets.effectiveMorePanelAdapterClasses.joinToString())
             return
         }
         val itemInterface = HookResolve.findClass(classLoader, listOf(HostTargets.MORE_PANEL_ITEM_INTERFACE))
@@ -103,14 +109,14 @@ object MorePanelInjector {
             return
         }
 
-        // f0(List) 是混淆名：按「名字 + 单个 List 参数」匹配
+        // updateData(List)（9.12.0）/ f0(List)（6.5.0）：按「名字候选 + 单个 List 参数」匹配
         val refresh = adapterClass.declaredMethods.firstOrNull { method ->
-            method.name == HostTargets.MORE_PANEL_REFRESH_METHOD &&
+            method.name in HostTargets.MORE_PANEL_REFRESH_METHODS &&
                 method.parameterTypes.size == 1 &&
                 List::class.java.isAssignableFrom(method.parameterTypes[0])
         }
         if (refresh == null) {
-            HookProbe.miss(module, "morePanelRefresh", "${adapterClass.name}#${HostTargets.MORE_PANEL_REFRESH_METHOD}(List)")
+            HookProbe.miss(module, "morePanelRefresh", "${adapterClass.name}#updateData(List)")
             return
         }
 
@@ -178,11 +184,12 @@ object MorePanelInjector {
     }
 
     /**
-     * 构造我们这一行的条目（动态代理实现宿主 `i` 接口）。
+     * 构造我们这一行的条目（动态代理实现宿主 `UIComponent` 接口）。
      *
-     * - `a()` 返回本代理类 → 宿主会为它分配一个全新的 viewType（无需注册）；
-     * - `b(context, parent)` 返回 holder 代理，`getRoot()` 给我们自己画的行视图；
-     * - `e(holder, continuation)` 是绑定回调：返回 `Unit`（避免宿主协程拿到 null）。
+     * - `createViewEntry(context, parent)` 返回 holder 代理，`getRoot()` 给我们自己画的行视图；
+     * - `bindToView(entry, continuation)` 是挂起绑定回调：返回 `Unit`（避免宿主协程拿到 null）；
+     * - `identityEqualityKey` / `contentEqualityKey` / `viewReusingKey` 返回稳定键，
+     *   DiffUtil 才会把我们这一行视为「同一项」，重复刷新不会重复插入。
      */
     private fun buildRowItem(
         module: XposedModule,
@@ -214,7 +221,7 @@ object MorePanelInjector {
                 override fun invoke(proxy: Any, method: Method, args: Array<out Any>?): Any? {
                     return try {
                         when (method.name) {
-                            "b" -> {
+                            "createViewEntry" -> {
                                 val context = args?.getOrNull(0) as? Context
                                 val parent = args?.getOrNull(1) as? ViewGroup
                                 if (context == null || parent == null) {
@@ -223,11 +230,11 @@ object MorePanelInjector {
                                     buildHolderProxy(classLoader, holderInterface, context, parent, module, onOpenPanel)
                                 }
                             }
-                            // 绑定回调：宿主在 onBindViewHolder 里调用，返回 Unit 即可；
-                            // unit 加载不到时返回 null —— 绑定回调的返回值被宿主协程忽略,风险可接受(有 probe 留痕)
-                            "e" -> unit
-                            // 视图类型 key：默认实现返回 getClass()，这里显式返回代理类，语义一致
-                            "a" -> proxy.javaClass
+                            // 挂起绑定回调：返回 Unit 即可；unit 加载不到时返回 null，
+                            // 宿主协程会忽略返回值，风险可接受（有 probe 留痕）
+                            "bindToView" -> unit
+                            // DiffUtil / 视图类型键：稳定且唯一即可
+                            "identityEqualityKey", "contentEqualityKey", "viewReusingKey" -> ROW_KEY
                             "toString" -> "BiliSponsorBlockMoreRow"
                             "hashCode" -> System.identityHashCode(proxy)
                             "equals" -> proxy === args?.firstOrNull()

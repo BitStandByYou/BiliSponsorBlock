@@ -21,7 +21,7 @@ app/src/main/kotlin/io/github/idongyou/bilisb/
         DexKitResolver.kt      混淆锚点的运行时定位（候选落空才触发）
         HookProbe.kt           命中率探针与解析工具
     hook/MineMenuInjector.kt   「我的」页设置入口注入
-    hook/MorePanelInjector.kt  播放器「更多」面板（9.12.0 未适配，不安装）
+    hook/MorePanelInjector.kt  播放器「更多」面板注入（UIComponent 适配器）
     player/                    播放器绑定、进度回调、aid/cid 采集、静音
     sponsor/ net/ model/ ui/ settings/ util/   业务层（上游复用）
 app/src/main/resources/META-INF/xposed/
