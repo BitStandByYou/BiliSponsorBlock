@@ -9,6 +9,7 @@ import android.widget.TextView
 import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface.PackageLoadedParam
+import io.github.idongyou.bilisb.host.DexKitResolver
 import io.github.idongyou.bilisb.host.HookProbe
 import io.github.idongyou.bilisb.host.HookResolve
 import io.github.idongyou.bilisb.host.HostTargets
@@ -68,6 +69,13 @@ object BiliSponsorBlockHooks {
         val cl = param.defaultClassLoader
         module.info("Installing hooks for ${param.packageName} process=$processName with $cl")
 
+        // 先用 DexKit 解析被混淆的锚点（候选名全部存在时零开销跳过），再装 hook。
+        runCatching {
+            DexKitResolver.resolve(module, param.applicationInfo.sourceDir, cl)
+        }.onFailure {
+            module.warn("DexKitResolver 异常，沿用候选名：${it.javaClass.simpleName}: ${it.message}")
+        }
+
         // aid/cid 消费方：观察者回调 -> controller
         VideoDirectorListener.setVideoIdSink { contextHash, aid, cid ->
             sponsorBlockController?.onVideoIds(contextHash, aid, cid)
@@ -80,18 +88,18 @@ object BiliSponsorBlockHooks {
         // （曾经出现过"一条 hook 抛异常 → 标记/时间扣减/我的页菜单全都没装"的情况）。
         installSafely(module, "directorService") { hookDirectorService(module, cl) }
         installSafely(module, "containerBinding") { hookContainerBinding(module, cl) }
-        installSafely(module, "legacyContainer") { hookLegacyContainer(module, cl) }
         installSafely(module, "seekTrack") { hookProgressDrawable(module, cl) }
         installSafely(module, "progressCallback") { hookProgressText(module, cl) }
         installSafely(module, "mineMenu") { io.github.idongyou.bilisb.hook.MineMenuInjector.install(module, cl) }
-        installSafely(module, "morePanel") {
-            io.github.idongyou.bilisb.hook.MorePanelInjector.install(module, cl) { rowView ->
-                openPlayerSheet(module, rowView)
+        if (HostTargets.MORE_PANEL_SUPPORTED) {
+            installSafely(module, "morePanel") {
+                io.github.idongyou.bilisb.hook.MorePanelInjector.install(module, cl) { rowView ->
+                    openPlayerSheet(module, rowView)
+                }
             }
+        } else {
+            HookProbe.skip(module, "morePanel", "9.12.0 面板为 Compose，未适配")
         }
-        // B 站增强(移植自 BiliTamer,MIT):IP 属地/隐藏互动提示/首页不自动刷新/
-        // 分享到 QQ/顶栏消息入口/底栏删 tab。开关在各 hook 回调内实时读 EnhanceFlags。
-        installSafely(module, "enhanceHooks") { io.github.idongyou.bilisb.hook.EnhanceHooks.install(module, cl) }
 
         module.info(HookProbe.summary())
     }
@@ -116,7 +124,7 @@ object BiliSponsorBlockHooks {
                 clazz,
                 HostTargets.DIRECTOR_ADD_OBSERVER_METHODS,
                 1,
-                paramTypeName = { it == HostTargets.DIRECTOR_OBSERVER_INTERFACE || it == HostTargets.LEGACY_OBSERVER_INTERFACE },
+                paramTypeName = { it == HostTargets.DIRECTOR_OBSERVER_INTERFACE },
             ) ?: continue
 
             module.hook(addMethod)
@@ -281,45 +289,15 @@ object BiliSponsorBlockHooks {
     }
 
     /**
-     * 旧目标（8.96）的容器生命周期入口，保留作为兜底：
-     * 这些类在 6.5.0 不存在，探针会记录 MISS。
-     */
-    private fun hookLegacyContainer(module: XposedModule, cl: ClassLoader) {
-        val clazz = runCatching {
-            Class.forName(HostTargets.LEGACY_CONTAINER_CLASS, false, cl)
-        }.getOrNull()
-        if (clazz == null) {
-            HookProbe.skip(module, "legacyContainer", "not present in this host")
-            return
-        }
-
-        HookResolve.declaredMethod(clazz, listOf("onCreate"), Bundle::class.java)?.let { method ->
-            hookAfter(module, method, "legacyContainer:onCreate") { chain ->
-                val container = chain.getThisObject() ?: return@hookAfter
-                bindPlayer(module, container, container)
-            }
-        }
-        HookResolve.declaredMethod(clazz, listOf("onStart"))?.let { method ->
-            hookAfter(module, method, "legacyContainer:onStart") { chain ->
-                val container = chain.getThisObject() ?: return@hookAfter
-                VideoDirectorListener.noteContextHash(PlayerBridge.contextHash(container))
-                VideoDirectorListener.tryRegisterFromHost(module, container)
-            }
-        }
-        HookResolve.declaredMethod(clazz, listOf("onDestroy"))?.let { method ->
-            hookAfter(module, method, "legacyContainer:onDestroy") { chain ->
-                val container = chain.getThisObject() ?: return@hookAfter
-                VideoDirectorListener.unregister(container)
-                sponsorBlockController?.onPlayerDestroyed(container)
-            }
-        }
-    }
-
-    /**
      * 待补绑的播放器：`bindPlayerContainer` 触发时 core 往往还没注入，
      * 这时先记下来，等第一次进度回调（那时 widget 已经有 core）再补绑。
      */
-    private data class PendingBind(val contextHash: Int, val container: Any, val host: Any)
+    private data class PendingBind(
+        val contextHash: Int,
+        val container: Any,
+        val host: Any,
+        val context: android.content.Context,
+    )
 
     /** 补绑用的挂起绑定。AtomicReference 抢占式清空,避免多线程重复 completeBind。 */
     private val pendingBindRef = java.util.concurrent.atomic.AtomicReference<PendingBind?>()
@@ -372,12 +350,12 @@ object BiliSponsorBlockHooks {
             ?: PlayerBridge.coreServiceFromDirector(VideoDirectorListener.lastDirectorService())
 
         if (core == null) {
-            pendingBindRef.set(PendingBind(contextHash, container ?: host, host))
+            pendingBindRef.set(PendingBind(contextHash, container ?: host, host, context))
             module.info("core not ready at bind time, defer binding context=$contextHash host=${host.javaClass.name}")
             return
         }
 
-        completeBind(module, contextHash, container ?: host, host, core)
+        completeBind(module, contextHash, container ?: host, host, core, context)
     }
 
     /**
@@ -393,7 +371,8 @@ object BiliSponsorBlockHooks {
         // 对它反射取 Context 会失败,补绑后的 Toast/静音/后续补绑会静默失效。
         val container = widget
         val controller = sponsorBlockController ?: return
-        controller.bindPlayerHandle(PlayerHandle(contextHash, container, core))
+        val rebindContext = PlayerBridge.context(widget) ?: PlayerBridge.context(container) ?: return
+        controller.bindPlayerHandle(PlayerHandle(contextHash, container, core, rebindContext))
         VideoDirectorListener.noteContextHash(contextHash)
         // 光有 handle 不够:state 只能由 onVideoIds 创建。玩家重建后 Context 实例换了
         // (contextHash 变了),director 回调却只会带着「当时」的旧 hash —— 新 context
@@ -434,7 +413,7 @@ object BiliSponsorBlockHooks {
                 pendingBindRef.compareAndSet(null, pending)
                 return
             }
-        completeBind(module, pending.contextHash, pending.container, pending.host, core)
+        completeBind(module, pending.contextHash, pending.container, pending.host, core, pending.context)
     }
 
     private fun completeBind(
@@ -443,8 +422,9 @@ object BiliSponsorBlockHooks {
         container: Any,
         host: Any,
         core: Any,
+        context: android.content.Context,
     ) {
-        sponsorBlockController?.bindPlayerHandle(PlayerHandle(contextHash, container, core))
+        sponsorBlockController?.bindPlayerHandle(PlayerHandle(contextHash, container, core, context))
 
         // 播放器内的「SB」提交按钮已按需求移除（不再注入任何播放器内 UI）。
         // 提交相关的代码（客户端的 POST 提交、草稿控制器、controller.markOrSubmitCurrentPosition）
@@ -908,7 +888,7 @@ object BiliSponsorBlockHooks {
      */
     private fun hookProgressDrawable(module: XposedModule, cl: ClassLoader) {
         var hooked = 0
-        for (className in HostTargets.SEEK_TRACK_CLASSES) {
+        for (className in io.github.idongyou.bilisb.host.ResolvedTargets.effectiveSeekTrackClasses) {
             val clazz = runCatching { Class.forName(className, false, cl) }.getOrNull() ?: continue
             val method = HookResolve.declaredMethod(clazz, listOf(HostTargets.DRAW_METHOD), Canvas::class.java)
                 ?: continue

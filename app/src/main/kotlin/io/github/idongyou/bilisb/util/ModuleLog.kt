@@ -3,7 +3,7 @@ package io.github.idongyou.bilisb.util
 import android.util.Log
 import io.github.libxposed.api.XposedInterface
 
-private const val TAG = "Bili2233"
+private const val TAG = "BiliSB"
 
 fun XposedInterface.info(message: String) {
     log(Log.INFO, TAG, message)

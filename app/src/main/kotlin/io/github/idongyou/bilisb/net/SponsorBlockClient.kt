@@ -536,7 +536,7 @@ class SponsorBlockClient(
         private const val TAG = "SponsorBlockClient"
 
         /** 提交接口固定使用的 userAgent(官方协议必填)。 */
-        const val SUBMIT_USER_AGENT = "Bili2233/1.0 (LSPosed)"
+        const val SUBMIT_USER_AGENT = "BiliSponsorBlock/1.0 (LSPosed)"
 
         /** 官方协议里的 service 字段(B 站)。 */
         const val SUBMIT_SERVICE = "bilibili"

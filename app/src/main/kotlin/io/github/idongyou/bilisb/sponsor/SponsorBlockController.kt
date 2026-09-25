@@ -54,6 +54,7 @@ class SponsorBlockController(
 
     private val latestStateByContext = ConcurrentHashMap<Int, PlayerState>()
     private val latestContainerByContext = ConcurrentHashMap<Int, Any>()
+    private val latestContextByContext = ConcurrentHashMap<Int, Context>()
     private val playerHandles = ConcurrentHashMap<Int, PlayerHandle>()
 
     /**
@@ -82,6 +83,7 @@ class SponsorBlockController(
         if (closed.get()) return
         val previous = playerHandles.put(handle.contextHash, handle)
         val previousContainer = latestContainerByContext.put(handle.contextHash, handle.container)
+        latestContextByContext.put(handle.contextHash, handle.context)
         // 全屏重绑同一 context 时不能 resetContextPolicyState:那会清 skipped 桶,片段会被再跳一次。
         // 仅在首次绑定或 container 换了时,对旧/新 container unmute+hide+cancel,并清 UI 记账。
         if (previous == null || previous.container !== handle.container) {
@@ -272,10 +274,12 @@ class SponsorBlockController(
             userIdByContext[contextHash] = userId
             return userId
         }
-        val context = latestContainerByContext[contextHash]?.let { PlayerBridge.context(it) as? Context } ?: run {
-            module.info("submit skipped: missing android context for context=$contextHash")
-            return null
-        }
+        val context = latestContextByContext[contextHash]
+            ?: latestContainerByContext[contextHash]?.let { PlayerBridge.context(it) as? Context }
+            ?: run {
+                module.info("submit skipped: missing android context for context=$contextHash")
+                return null
+            }
         val userId = UserIdentityStore(context).getOrCreateUserId()
         userIdByContext[contextHash] = userId
         return userId
@@ -793,6 +797,7 @@ class SponsorBlockController(
     private fun removeContext(contextHash: Int) {
         latestStateByContext.remove(contextHash)
         latestContainerByContext.remove(contextHash)
+        latestContextByContext.remove(contextHash)
         playerHandles.remove(contextHash)
         manualButtonSegmentKeyByContext.remove(contextHash)
         countdownSegmentKeyByContext.remove(contextHash)
@@ -810,6 +815,7 @@ class SponsorBlockController(
         if (previous === this || closed.get()) return
         latestStateByContext.putAll(previous.latestStateByContext)
         latestContainerByContext.putAll(previous.latestContainerByContext)
+        latestContextByContext.putAll(previous.latestContextByContext)
         playerHandles.putAll(previous.playerHandles)
         // 不迁移 manualButton/countdown 两张 key 表:旧 controller close() 时会隐藏按钮、
         // 取消倒计时浮层(模块级 UI,作用于容器本身),若迁移 key 表,同片段的下个进度回调
@@ -857,6 +863,7 @@ class SponsorBlockController(
         fetchGeneration.clear()
         latestStateByContext.clear()
         latestContainerByContext.clear()
+        latestContextByContext.clear()
         playerHandles.clear()
         skippedSegmentsByVideo.clear()
         sanitizedCache.clear()

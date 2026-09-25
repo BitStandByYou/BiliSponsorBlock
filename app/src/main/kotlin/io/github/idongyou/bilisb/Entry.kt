@@ -18,7 +18,7 @@ class Entry : XposedModule() {
 
     override fun onModuleLoaded(param: ModuleLoadedParam) {
         processName = param.processName
-        info("Bili2233 module loaded in ${param.processName}")
+        info("哔哩哔哩空降助手 module loaded in ${param.processName}")
     }
 
     override fun onPackageLoaded(param: PackageLoadedParam) {

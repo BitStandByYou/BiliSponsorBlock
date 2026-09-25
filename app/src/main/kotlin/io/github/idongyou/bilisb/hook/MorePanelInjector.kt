@@ -228,7 +228,7 @@ object MorePanelInjector {
                             "e" -> unit
                             // 视图类型 key：默认实现返回 getClass()，这里显式返回代理类，语义一致
                             "a" -> proxy.javaClass
-                            "toString" -> "Bili2233MoreRow"
+                            "toString" -> "BiliSponsorBlockMoreRow"
                             "hashCode" -> System.identityHashCode(proxy)
                             "equals" -> proxy === args?.firstOrNull()
                             else -> null
@@ -259,7 +259,7 @@ object MorePanelInjector {
                 override fun invoke(proxy: Any, method: Method, args: Array<out Any>?): Any? {
                     return when (method.name) {
                         "getRoot" -> row
-                        "toString" -> "Bili2233MoreRowHolder"
+                        "toString" -> "BiliSponsorBlockMoreRowHolder"
                         "hashCode" -> System.identityHashCode(proxy)
                         "equals" -> proxy === args?.firstOrNull()
                         else -> null

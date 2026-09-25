@@ -31,7 +31,7 @@ object MineMenuInjector {
 
     private const val SETTING_ID = 0x5B5B5B5BL
     private const val SETTING_URI = "bilisb://settings"
-    private const val SETTING_TITLE = "Bili2233"
+    private const val SETTING_TITLE = "哔哩哔哩空降助手"
     private val ROUTER_METHOD_NAMES = setOf("open", "handle", "route", "navigate", "dispatch")
     // 宿主“我的”页按钮图标链路实际接受远程图片 URL。
     private const val SETTING_ICON = "https://i0.hdslb.com/bfs/album/276769577d2a5db1d9f914364abad7c5253086f6.png"
@@ -121,7 +121,9 @@ object MineMenuInjector {
     private fun isOurTitle(text: CharSequence?): Boolean {
         val t = text?.toString()?.trim().orEmpty()
         if (t.isEmpty()) return false
-        return t.equals(SETTING_TITLE, ignoreCase = true) || t.contains("Bili2233", ignoreCase = true)
+        return t.equals(SETTING_TITLE, ignoreCase = true) ||
+            t.contains("空降助手", ignoreCase = true) ||
+            t.contains("BiliSponsorBlock", ignoreCase = true)
     }
 
     private fun findTitleView(view: View): TextView? {
@@ -151,7 +153,7 @@ object MineMenuInjector {
         val activity = PlayerBridge.activity(view)
         if (activity != null) {
             SponsorBlockSettingDialog.show(activity)
-            module.info("Showing Bili2233 settings dialog (direct bind)")
+            module.info("Showing 空降助手 settings dialog (direct bind)")
         } else {
             module.warn("Context is not Activity: ${view.context.javaClass.name}")
         }
@@ -201,10 +203,14 @@ object MineMenuInjector {
     }
 
     private fun hookMineAdapter(module: XposedModule, classLoader: ClassLoader, menuItemClass: Class<*>) {
-        // 6.5.0 的 adapter 外层类被混淆成 tv.danmaku.bili.ui.main2.mine.d
-        val adapterClass = HookResolve.findClass(classLoader, HostTargets.MINE_ADAPTER_CLASSES)
+        // 9.12.0 的 adapter 外层类被混淆成 tv.danmaku.bili.ui.main2.mine.d（真名候选优先，
+        // 宿主改版重排后由 DexKit 结构查询兜底，见 ResolvedTargets）
+        val adapterClass = HookResolve.findClass(
+            classLoader,
+            io.github.idongyou.bilisb.host.ResolvedTargets.effectiveMineAdapterClasses,
+        )
         if (adapterClass == null) {
-            HookProbe.miss(module, "mineAdapter", HostTargets.MINE_ADAPTER_CLASSES.joinToString())
+            HookProbe.miss(module, "mineAdapter", io.github.idongyou.bilisb.host.ResolvedTargets.effectiveMineAdapterClasses.joinToString())
             module.warn("mine adapter not found")
             return
         }
@@ -367,7 +373,7 @@ object MineMenuInjector {
         }
 
         itemList.add(insertIndex, settingItem)
-        module.info("Injected Bili2233 setting item at position $insertIndex")
+        module.info("Injected 空降助手 setting item at position $insertIndex")
     }
 
     private fun createSettingItem(module: XposedModule, menuItemClass: Class<*>): Any? {

@@ -169,7 +169,7 @@ object SettingsScreenBuilder {
                 }
                 setPadding(dp(activity, 16), dp(activity, 14), dp(activity, 16), dp(activity, 14))
                 addView(TextView(activity).apply {
-                    text = "Bili2233"
+                    text = "哔哩哔哩空降助手"
                     textSize = 20f
                     setTextColor(Color.WHITE)
                     setTypeface(typeface, Typeface.BOLD)
@@ -653,7 +653,7 @@ object SettingsScreenBuilder {
                             return@setOnClickListener
                         }
                         val clipboard = activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("Bili2233 userId", id))
+                        clipboard.setPrimaryClip(ClipData.newPlainText("空降助手 userId", id))
                         Toast.makeText(activity, "已复制", Toast.LENGTH_SHORT).show()
                     }
                 })

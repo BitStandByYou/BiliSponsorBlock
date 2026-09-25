@@ -15,21 +15,24 @@ import java.util.concurrent.atomic.AtomicInteger
 /**
  * video id(aid / cid)获取链路。
  *
- * ## 6.5.0（`com.bilibili.app.in`）实测结论
+ * ## 9.12.0（`tv.danmaku.bili`）实测结论
  *
- * - 旧接口 `VideoDirectorObserver` / `addVideoDirectorObserver` / `getLogDescription()` **都不存在**。
- * - 观察者接口是 `tv.danmaku.biliplayerv2.service.E0`（`j0(E0)` 注册 / `z0(E0)` 注销），
- *   回调形态 `b(Video$e current, Video$e previous)`、`c(Video$e)`、`e(Video$e)`。
- * - 服务实现类是 `tv.danmaku.biliplayerimpl.videodirector.PlayDirectorServiceV3`（类名未混淆），
- *   `D()` 返回当前 `Video$e`（字节码：`getItem()?.a()`）。
- * - `Video$e#z()` 返回 `Video$a`（`DanmakuResolveParams`），字段 `a`=avid、`b`=cid（`toString` 实测）。
+ * - 观察者接口是 **未混淆的** `tv.danmaku.biliplayerv2.service.VideoDirectorObserver`，
+ *   回调形态 `onItemStart(Video$PlayableParams)`、`onPlayableParamsChanged(Video$PlayableParams)`、
+ *   `onItemWillChange(current, previous)`、`onItemCompleted(...)`。
+ * - 注册/注销：`PlayDirectorServiceV3#addVideoDirectorObserver(o)` / `removeVideoDirectorObserver(o)`
+ *   （类名与方法名均未混淆）。
+ * - 服务实现类 `tv.danmaku.biliplayerimpl.videodirector.PlayDirectorServiceV3`，
+ *   `getCurrentPlayableParams()` 返回当前 `Video$PlayableParams`。
+ * - `Video$PlayableParams#getDanmakuResolveParams()` → `Video$DanmakuResolveParams`，
+ *   字段 `a:J`=avid、`b:J`=cid（另有 getAvid/getCid）。
  *
- * ## 关联 contextHash 的取舍（推测实现）
+ * ## 关联 contextHash 的取舍
  *
- * 6.5.0 里 director 服务与播放器容器之间没有稳定的可反射映射，所以这里用
- * 「最近一次绑定容器的 contextHash」作为回落目标：容器 `bindPlayerContainer(f)` 时记下 hash，
+ * director 服务与播放器容器之间没有稳定的可反射映射，所以这里用
+ * 「最近一次绑定容器的 contextHash」作为回落目标：容器 `bindPlayerContainer` 时记下 hash，
  * 观察者回调到来时把 aid/cid 应用到该 hash。单播放页场景与旧行为一致；
- * 小窗/多实例场景需要在真机上用探针日志确认后再细化（见 docs/ROADMAP.md）。
+ * 小窗/多实例场景需要在真机上用探针日志确认后再细化。
  */
 object VideoDirectorListener {
     /**
@@ -153,7 +156,7 @@ object VideoDirectorListener {
         }
         val observerInterface = HookResolve.findClass(
             classLoader,
-            listOf(HostTargets.DIRECTOR_OBSERVER_INTERFACE, HostTargets.LEGACY_OBSERVER_INTERFACE),
+            listOf(HostTargets.DIRECTOR_OBSERVER_INTERFACE),
         )
         if (observerInterface == null) {
             HookProbe.miss(module, "director", "observer interface not found")
@@ -410,7 +413,7 @@ object VideoDirectorListener {
         private fun handle(proxy: Any, method: Method, args: Array<out Any>?): Any? {
             if (method.declaringClass == Any::class.java) {
                 return when (method.name) {
-                    "toString" -> "Bili2233DirectorObserverProxy"
+                    "toString" -> "BiliSponsorBlockDirectorObserverProxy"
                     "hashCode" -> System.identityHashCode(proxy)
                     "equals" -> proxy === args?.firstOrNull()
                     else -> null
