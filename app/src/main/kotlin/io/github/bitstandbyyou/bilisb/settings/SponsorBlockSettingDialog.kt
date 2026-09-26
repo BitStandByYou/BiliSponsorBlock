@@ -77,7 +77,7 @@ object SponsorBlockSettingDialog {
             onSponsorBlockClick = { forward { showDetail(activity, onDismiss) } },
         )
 
-        // 控制中心:主弹窗的专名(2026-09-19 起,不再与模块名 Bili2233 混用)。
+        // 控制中心:主弹窗的专名。
         // 标题即内容里的品牌粉头图;不再用 AlertDialog 原生标题/按钮 ——
         // 透明窗口下它们会露出宿主主题的深色样式(2026-09-19 截图回归)。
         val dialog = AlertDialog.Builder(activity)

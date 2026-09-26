@@ -48,7 +48,7 @@ object PlayerBridge {
     /**
      * 从宿主对象（容器 / widget / View）解包出 Activity。
      *
-     * 6.5.0 真机实测：容器的 Context 是主题包装后的 ContextWrapper，不是 Activity，
+     * 容器的 Context 可能是主题包装后的 ContextWrapper，不是 Activity，
      * 所以必须逐层解包 `baseContext`；同时取 Context 的方法名是 `t()` 而不是 `getContext()`。
      */
     fun activity(host: Any): android.app.Activity? {

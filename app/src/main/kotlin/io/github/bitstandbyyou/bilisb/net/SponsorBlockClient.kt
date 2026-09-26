@@ -426,7 +426,7 @@ class SponsorBlockClient(
 
     /*
      * 拉取接口不带任何 query 参数(历史注记,参数实测全部 400)。
-     * 真机实测（6.5.0 + `https://bsbsb.top`）：
+     * 真机实测（`https://bsbsb.top`）：
      *   `?videoID=...&cid=...&actionType=skip` → HTTP 400
      *   `?videoID=...` / `?cid=...`          → HTTP 400
      *   `?actionType=skip` / 无 query         → HTTP 200（返回该 hash 前缀下所有视频的片段）

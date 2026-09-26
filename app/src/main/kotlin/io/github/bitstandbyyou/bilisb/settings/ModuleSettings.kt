@@ -88,7 +88,6 @@ object ModuleSettings {
      * 这时打 warn 并继续试下一个候选,而不是"第一个能读就算数"。
      */
     private fun tryFileFallback(module: XposedModule): SettingsSnapshot? {
-        // 6.5.0 目标宿主是 com.bilibili.app.in；旧包目录保留兜底
         val candidates = buildList {
             // 从 MODULE_PACKAGE 派生而不是写死字面量：应用 ID 改过几次，写死的话这里最容易漏改
             // —— 漏了就只是「IPC 失败时读不到兜底镜像」，很难查。

@@ -35,16 +35,15 @@ val hasReleaseSigning = releaseStorePath != null &&
     releaseKeyPassword != null
 
 // 版本单一来源（与 META-INF/xposed/module.prop 由下方 checkModuleProp 守卫一致性）
-val MODULE_VERSION_CODE = 1
-val MODULE_VERSION_NAME = "1.0.0"
+val MODULE_VERSION_CODE = 2
+val MODULE_VERSION_NAME = "1.0.1"
 
 android {
     namespace = "io.github.bitstandbyyou.bilisb"
     compileSdk = 36
 
     defaultConfig {
-        // 独立模块身份：与「哔哩哔哩空降助手」国际版（io.github.ch6vip.bilisb）以及
-        // 本机 PureMe（io.github.idongyou.pureme）都不冲突，可共存。
+        // 独立模块身份：与本机 PureMe（io.github.idongyou.pureme）不冲突，可共存。
         applicationId = "io.github.bitstandbyyou.bilisb"
         // minSdk 26：Vector 从 APK 内路径加载 libdexkit.so，需要 so 未压缩，
         // 而 useLegacyPackaging 在 minSdk >= 23 时默认为 false。
@@ -109,7 +108,7 @@ kotlin {
 }
 
 // ---------------------------------------------------------------------------
-// module.prop 版本一致性守卫（上游沿用的防呆：两边版本必须一致）
+// module.prop 版本一致性守卫（两边版本必须一致）
 // ---------------------------------------------------------------------------
 val checkModuleProp = tasks.register("checkModuleProp") {
     val propFile = file("src/main/resources/META-INF/xposed/module.prop")

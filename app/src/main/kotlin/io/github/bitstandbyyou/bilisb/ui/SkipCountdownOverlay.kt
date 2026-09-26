@@ -229,7 +229,6 @@ object SkipCountdownOverlay {
     }
 
     private fun playerActivity(host: Any): Activity? {
-        // 6.5.0：容器取 Context 的方法名是 t()，且拿到的是 ContextWrapper，需要解包才是 Activity
         return PlayerBridge.activity(host)
     }
 

@@ -10,7 +10,7 @@ import io.github.bitstandbyyou.bilisb.model.SponsorSegment
 /**
  * 进度条片段标记绘制。
  *
- * 实现严格对齐官方 patch（Bili-v8.98.0 BiliRoamingX）的 `SponsorBlockPatch.b(zo, Drawable, Canvas)`：
+ * 绘制赞助片段矩形标记与 POI 高亮圆点：
  *   - 画在**轨道 drawable 自己的 bounds 上**（薄轨道高度 top→bottom），而不是父 View 的整高，
  *     这样标记和进度条等高、嵌在轨道里，而不是一根高 bar 浮在上面。
  *   - 用**实色**分类画笔（不带 alpha），对应 patch 里的 `anVar.o`。
@@ -18,13 +18,9 @@ import io.github.bitstandbyyou.bilisb.model.SponsorSegment
  *   - POI 高亮：`drawCircle(xStart, centerY, height/2)`，对应 patch `anVar.d()` 分支。
  *
  * 几何计算全部在 [MarkerGeometry] 里（纯 Kotlin，不依赖 android.graphics），
- * 这样 6.5.0 上「片段起点超出 duration / 贴到最右 1px」不再让 `coerceIn` 抛
- * IllegalArgumentException（旧实现会被 runCatching 静默吞掉，并中断 forEach 使
- * 后续标记整帧消失）。
+ * 统一处理片段超出视频时长和边界像素的情况。
  *
- * 调用点（6.5.0 `com.bilibili.app.in`）：hook 的是 `seek.v3.g`（Drawable，实色轨道层）
- * 与 `seek.v3.f`（SeekBar 本体，只有 View 宽高、没有 drawable bounds），两者都走
- * [drawInBounds]；旧的 `seek.v3.q` / `seek.v3.e` 已失效。
+ * 调用方将进度条区域传入 [drawInBounds]，由本对象在对应边界内绘制片段标记。
  */
 object ProgressMarkerPainter {
     // 分类配色兜底(实色,无 alpha)。当快照里没有该分类颜色时回退到这里。
@@ -52,7 +48,7 @@ object ProgressMarkerPainter {
     /**
      * 在轨道 drawable 上绘制标记。对应 patch 的 `b(...)`。
      *
-     * @param drawable 轨道 drawable（6.5.0 的 `seek.v3.g`），用它的 bounds 决定标记的位置和高度
+     * @param drawable 轨道 drawable，用它的 bounds 决定标记的位置和高度
      * @param colorOverrides 用户在设置里自定义的分类颜色(category→ARGB)。缺该分类则回退内置配色。
      */
     fun draw(
@@ -68,9 +64,7 @@ object ProgressMarkerPainter {
     /**
      * 在给定 bounds 上绘制标记。
      *
-     * 6.5.0（`com.bilibili.app.in`）里覆写 `draw(Canvas)` 的候选包括
-     * `seek.v3.g`（Drawable，实色矩形轨道层）与 `seek.v3.f`（AppCompatSeekBar 本体，是 View 不是 Drawable），
-     * 后者没有 drawable bounds，只有 View 的宽高，所以这里统一按矩形区域绘制。
+     * 使用给定矩形区域绘制，适用于 drawable 轨道和 SeekBar 等进度条视图。
      */
     fun drawInBounds(
         canvas: Canvas,

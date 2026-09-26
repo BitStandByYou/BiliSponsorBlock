@@ -9,7 +9,7 @@ import io.github.bitstandbyyou.bilisb.host.HostTargets
 object SettingsSyncBridge {
     const val MODULE_PACKAGE = "io.github.bitstandbyyou.bilisb"
 
-    /** 目标宿主包名（bilibili 6.5.0 国际版）。 */
+    /** 目标宿主包名（哔哩哔哩国内版）。 */
     const val HOST_PACKAGE = HostTargets.HOST_PACKAGE
     /**
      * Provider authority,由 applicationId 派生(与 AndroidManifest 里的

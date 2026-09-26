@@ -174,7 +174,7 @@ object SettingsScreenBuilder {
                     setTypeface(typeface, Typeface.BOLD)
                 })
                 addView(TextView(activity).apply {
-                    text = "SponsorBlock · 开源 LSPosed 模块(MIT)"
+                    text = "SponsorBlock · 跳过视频恰饭片段"
                     textSize = 12f
                     setTextColor(0xE6FFFFFF.toInt())
                     setPadding(0, dp(activity, 2), 0, 0)

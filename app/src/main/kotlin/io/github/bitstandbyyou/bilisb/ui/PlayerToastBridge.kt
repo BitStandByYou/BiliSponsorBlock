@@ -12,9 +12,7 @@ import io.github.libxposed.api.XposedModule
 /**
  * 播放器内 Toast 提示。
  *
- * 6.5.0 坑位（真机复现）：容器取 Context 的方法从 `getContext()` 改成了 `t()`，
- * 旧实现里 `getDeclaredMethod("getContext")` 抛异常后被 `?: return` **静默吞掉**，
- * 表现就是「跳过了但没有 Toast」。现在统一走 [PlayerBridge.context]，
+ * 统一走 [PlayerBridge.context] 获取 Context，避免反射失败后提前返回，
  * 并且取不到 Context 时**必须留日志**，不再静默。
  *
  * 另外加了相同文案的节流：进度回调与倒计时结束时可能连着触发多次，宿主 Toast

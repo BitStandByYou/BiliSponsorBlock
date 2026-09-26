@@ -34,7 +34,6 @@ object SkipStatsStore {
     private const val TAG = "SkipStatsStore"
 
     // 与 settings 镜像同目录,宿主进程可写自己的数据目录。
-    // 6.5.0 目标宿主是 com.bilibili.app.in；旧包目录保留兜底（读写都按候选顺序尝试）。
     private val candidates = HostTargets.HOST_DATA_DIRS.map { File(it, "sponsorblock_stats.json") }
 
     /** 原子写入用的临时文件后缀(同目录 rename 才是原子的)。 */

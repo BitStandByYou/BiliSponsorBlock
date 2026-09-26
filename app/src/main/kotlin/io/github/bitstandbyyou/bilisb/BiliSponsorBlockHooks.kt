@@ -29,14 +29,8 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * Hook 安装与编排中枢。
  *
- * 目标是 **bilibili 6.5.0（`com.bilibili.app.in`）**；类名/方法名一律走 [HostTargets] 候选表，
- * 解析结果由 [HookProbe] 记录（哪条 hook 装上、哪条没找到），避免宿主改版后静默失效。
- *
- * 6.5.0 相对旧目标（8.96）的关键差异（见 docs/APK_6.5.0_ANALYSIS.md）：
- *   1. 播放器容器入口从「Hook 容器 `be1.j` 生命周期」改成「Hook widget 的 `bindPlayerContainer(f)`」；
- *   2. 进度回调方法名被混淆成 `G(int,int)`（旧目标 `onPlayerProgressChange`）；
- *   3. aid/cid 走 `PlayDirectorServiceV3#j0(E0)` 注册观察者 + `Video$e#z()` -> `Video$a`；
- *   4. 进度条绘制目标从 `seek.v3.q/e` 换成 `seek.v3.g`（`seek.v3.a` 是热度曲线，不能挂）。
+ * 所有宿主类名与方法候选集中于 [HostTargets]；解析命中由 [HookProbe] 记录，
+ * 便于诊断宿主更新后的适配情况。
  */
 object BiliSponsorBlockHooks {
     private val installed = ConcurrentHashMap.newKeySet<String>()
@@ -92,10 +86,7 @@ object BiliSponsorBlockHooks {
 
     // ------------------------------------------------------------------ aid/cid 入口
 
-    /**
-     * 6.5.0：`PlayDirectorServiceV3#j0(E0)` 是观察者注册入口。
-     * Hook 它是为了拿到服务实例，然后把我们自己的 `E0` 代理也注册进去。
-     */
+    /** Hook 观察者注册方法，取得服务实例后注册模块自己的观察者代理。 */
     private fun hookDirectorService(module: XposedModule, cl: ClassLoader) {
         for (className in HostTargets.DIRECTOR_SERVICE_CLASSES) {
             val clazz = runCatching { Class.forName(className, false, cl) }.getOrNull() ?: continue
@@ -126,11 +117,8 @@ object BiliSponsorBlockHooks {
     // ------------------------------------------------------------------ 播放器容器绑定
 
     /**
-     * 6.5.0：widget 在拿到播放器容器时回调 `bindPlayerContainer(tv.danmaku.biliplayerv2.f)`。
-     * 这是 6.5.0 上最稳的「进入播放页」入口（旧目标是容器自己的生命周期方法）。
-     *
-     * 同时在同一个 widget 上挂 `onDetachedFromWindow` 作为**播放器离开**信号 —— 6.5.0 没有
-     * 旧目标 `be1.j#onDestroy` 那种容器生命周期方法，没有这个信号就会出现：
+     * 在 widget 的容器绑定方法上接入播放器，并在同一 widget 上挂
+     * `onDetachedFromWindow` 作为**播放器离开**信号。离开信号用于避免：
      * 静音不解除、倒计时离开了还在跑（到点对已废弃的 core seek 并记统计）、按钮/浮层残留、
      * controller 里按 contextHash 的容器强引用永不释放。
      */
@@ -181,7 +169,7 @@ object BiliSponsorBlockHooks {
     /**
      * 播放器离开/销毁：取消静音、隐藏浮层与按钮、释放 contextHash 关联状态。
      *
-     * 这是 6.5.0 上真正会被调用的清理入口（挂在 widget 的 `onDetachedFromWindow` 上）。
+     * 清理入口挂在 widget 的 `onDetachedFromWindow` 上。
      */
     private fun onPlayerLeft(module: XposedModule, host: Any, container: Any?) {
         HookProbe.first(module, "playerTeardownCalled", 5) { host.javaClass.name }
@@ -279,8 +267,8 @@ object BiliSponsorBlockHooks {
     /**
      * 绑定播放器：取 Context / core 并交给 controller。
      *
-     * @param host 触发绑定的对象（6.5.0 是 widget，本身是 View）
-     * @param container 播放器容器（6.5.0 是 `tv.danmaku.biliplayerv2.f`）
+     * @param host 触发绑定的 widget
+     * @param container 播放器容器
      */
     private fun bindPlayer(module: XposedModule, host: Any, container: Any?) {
         val context = container?.let { PlayerBridge.context(it) }
@@ -388,7 +376,7 @@ object BiliSponsorBlockHooks {
     ) {
         sponsorBlockController?.bindPlayerHandle(PlayerHandle(contextHash, container, core, context))
 
-        // 探针：从 widget 上试取 director 服务（6.5.0 只有部分 widget 暴露）
+        // 探针：从 widget 上尝试获取 director 服务。
         VideoDirectorListener.tryRegisterFromHost(module, host)
 
         module.info("player bound context=$contextHash host=${host.javaClass.name} core=${core.javaClass.name}")
@@ -477,7 +465,7 @@ object BiliSponsorBlockHooks {
                 continue
             }
 
-            // 6.5.0: G(int,int)；旧目标: onPlayerProgressChange / updateTime / i0
+            // 优先解析整型参数的进度回调候选。
             HookResolve.declaredMethod(
                 clazz,
                 HostTargets.PROGRESS_CALLBACK_INT_METHODS,
@@ -488,11 +476,7 @@ object BiliSponsorBlockHooks {
                 callbackHooked++
             }
 
-            // 8.98/6.5.0 形态: j0(long,long) / k0(long,long)。
-            // 探针实测前**不喂给 controller**：静态分析已确认真正的进度派发是
-            // `service.r0#G(int position, int duration)`（调用点参数直接来自 core.getCurrentPosition()/getDuration()），
-            // 这两个 long 方法很可能不是进度回调（j0 体内有 const/16 999 之类的定时/格式化逻辑），
-            // 所以只挂上去打日志，避免用错语义的数值做跳过决策。
+            // 长整型候选只记录探针，不传给 controller，避免把语义未确认的数据用于跳过决策。
             HookResolve.declaredMethod(
                 clazz,
                 HostTargets.PROGRESS_CALLBACK_LONG_METHODS,
@@ -681,15 +665,7 @@ object BiliSponsorBlockHooks {
 
     // ------------------------------------------------------------------ 进度条标记
 
-    /**
-     * 进度条片段标记。
-     *
-     * 6.5.0 里：
-     *   - `seek.v3.g` = 实色矩形轨道层（Drawable，首选）
-     *   - `seek.v3.f` = SeekBar 本体（View，备选，按整宽绘制）
-     *   - `seek.v3.a` = 热度曲线（Path/Matrix），**不能挂**，会把标记画到高轨道上
-     * 旧目标的 `seek.v3.q`（LayerDrawable）/`seek.v3.e`（lambda）在 6.5.0 都不覆写 draw。
-     */
+    /** 进度条片段标记；候选类由 HostTargets 与 DexKitResolver 提供。 */
     private fun hookProgressDrawable(module: XposedModule, cl: ClassLoader) {
         var hooked = 0
         for (className in io.github.bitstandbyyou.bilisb.host.ResolvedTargets.effectiveSeekTrackClasses) {

@@ -19,7 +19,7 @@ import io.github.libxposed.api.XposedModule
 /**
  * 在B站"我的"页面菜单注入设置入口。
  *
- * 6.5.0（`com.bilibili.app.in`）实测：
+ * 国内版宿主适配：
  *   - `MenuGroup` / `MenuGroup$Item` 类名与字段完整保留（`id/title/uri/icon/needLogin/redDot/localShow`），
  *     所以注入构造逻辑可以复用；
  *   - 「我的」页 adapter 的外层类被混淆成 `tv.danmaku.bili.ui.main2.mine.d`（Fragment 名保留），
@@ -300,8 +300,7 @@ object MineMenuInjector {
     /**
      * 在 adapter 的所有 List 字段里，挑出元素类型为 [expectedClassName] 的那一个。
      *
-     * 6.5.0 真机结论：**不再使用「第一个非空 List」兜底**。
-     * 该兜底会在无关 adapter（实测 `LF1.b`）上也注入出一份菜单项，导致重复/错位；
+     * **不使用「第一个非空 List」兜底**，避免在无关 adapter 上注入菜单项导致重复或错位；
      * 而真正的「我的」页 adapter（`tv.danmaku.bili.ui.main2.mine.d`）本身就能按内容命中，
      * 所以这里只认内容匹配，匹配不到就放弃（探针记录适配器类名，便于宿主改版后补候选）。
      */
@@ -431,8 +430,7 @@ object MineMenuInjector {
 
     private fun hookUriRouter(module: XposedModule, classLoader: ClassLoader) {
         // Hook B站的URI路由器，拦截 bilisb://settings
-        // 6.5.0 实测：blrouter 框架还在，但 Router / BLRouter 类名不存在（被混淆），
-        // IntentHandlerActivity 仍存在。这里按候选尝试，命中情况由探针记录（见 ROADMAP M8）。
+        // 路由相关类名可能被混淆；按候选尝试，命中情况由探针记录（见 ROADMAP M8）。
         var hooked = 0
 
         for (className in HostTargets.ROUTER_CLASSES) {

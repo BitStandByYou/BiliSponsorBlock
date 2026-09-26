@@ -8,10 +8,7 @@ import io.github.libxposed.api.XposedModule
 /**
  * 播放器 core 操作（seek / 时长 / 位置）的反射封装。
  *
- * 6.5.0（`com.bilibili.app.in`）实测：
- *   - `getDuration()` / `getCurrentPosition()` 名字保留，返回 int（毫秒）
- *   - `seekTo(int)` 是默认方法，方法体就是 `o(pos, false)`；
- *     平滑 seek 必须调 `o(int, boolean)`（旧目标是 `seekTo(int, boolean)`）
+ * core 方法通过 [HostTargets] 中的候选名解析；优先使用平滑 seek，找不到时回退到普通 seek。
  */
 object PlayerActions {
     fun seekTo(module: XposedModule, core: Any, positionMs: Long): Boolean {

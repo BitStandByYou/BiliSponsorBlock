@@ -1,8 +1,7 @@
 # BiliSponsorBlock（哔哩哔哩空降助手）
 
 哔哩哔哩**国内版** `tv.danmaku.bili` 9.12.0 的 SponsorBlock 跳过模块。
-由 [`ch6vip/lsposed-bili-sponsorblock`](https://github.com/ch6vip/lsposed-bili-sponsorblock)（MIT）移植，
-Hook 层针对国内版重新实现。
+Hook 层按国内版宿主特性实现。
 
 - 作者：BitStandByYou
 - 框架：现代 libxposed API 101（`io.github.libxposed:api`）
@@ -30,7 +29,7 @@ app/src/main/kotlin/io/github/bitstandbyyou/bilisb/
         HookProbe.kt           命中率探针与解析工具
     hook/MineMenuInjector.kt   「我的」页设置入口注入
     player/                    播放器绑定、进度回调、aid/cid 采集、静音
-    sponsor/ net/ model/ ui/ settings/ util/   业务层（上游复用）
+    sponsor/ net/ model/ ui/ settings/ util/   模块业务实现
 app/src/main/resources/META-INF/xposed/
     module.prop / java_init.list / scope.list
 ```

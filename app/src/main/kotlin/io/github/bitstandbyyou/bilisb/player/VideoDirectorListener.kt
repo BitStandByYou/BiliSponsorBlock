@@ -142,9 +142,9 @@ object VideoDirectorListener {
     fun activeContextHash(): Int = lastContextHash
 
     /**
-     * 把观察者代理挂到 director 服务实例上（6.5.0 主路径）。
+     * 把观察者代理挂到 director 服务实例上。
      *
-     * 调用点：Hook `PlayDirectorServiceV3#j0(E0)` 之后拿到服务实例时调用。
+     * 调用点：Hook director 服务的观察者注册方法后，拿到服务实例时调用。
      */
     fun registerDirectorService(module: XposedModule, directorService: Any): Boolean {
         // 弱引用集合：同一对象重复注册直接复用；旧对象被回收后不会留下"假去重"
@@ -202,7 +202,7 @@ object VideoDirectorListener {
         return ok
     }
 
-    /** 尝试从 widget / 容器上取 director 服务并挂代理（旧目标路径，6.5.0 部分 widget 也有）。 */
+    /** 尝试从 widget / 容器上取 director 服务并挂代理，作为补充路径。 */
     fun tryRegisterFromHost(module: XposedModule, host: Any): Boolean {
         val service = HookResolve.invokeNoArg(host, HostTargets.DIRECTOR_GET_SERVICE_METHODS) ?: run {
             HookProbe.miss(module, "directorFromHost", host.javaClass.name)

@@ -54,7 +54,7 @@ class SettingsWriter(context: Context) {
         mirrorTargets.add(File(appContext.filesDir, SettingsKeys.MIRROR_FILE))
 
         // 镜像位置 2: 目标 App 数据目录 (Hook 端可直接读取)
-        // 6.5.0 目标宿主是 com.bilibili.app.in；旧包目录保留作为兜底（见 HostTargets.HOST_DATA_DIRS）
+        // 目录候选见 HostTargets.HOST_DATA_DIRS。
         // 模块进程写宿主数据目录必然因沙箱失败,只会白跑 4 次失败的写 + 异常填栈,直接跳过。
         if (!isModuleProcess) {
             for (dir in HostTargets.HOST_DATA_DIRS) {

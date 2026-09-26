@@ -3,8 +3,7 @@ package io.github.bitstandbyyou.bilisb.host
 /**
  * 目标宿主（哔哩哔哩国内版 `tv.danmaku.bili` 9.12.0 / versionCode 9120300）的类名与方法名清单。
  *
- * 与上游 Bili2233（国际版 `com.bilibili.app.in` 6.5.0）不同，国内 9.12.0 的播放器栈
- * **大量保留真名**（`PlayerProgressObserver`、`VideoDirectorObserver`、`PlayerContainer`、
+ * 国内版 9.12.0 的播放器栈**大量保留真名**（`PlayerProgressObserver`、`VideoDirectorObserver`、`PlayerContainer`、
  * `MenuGroup` 等），所以这里以真名为主，仅对确实被混淆的短名（如 `seek.v3.g`、`mine.d`）保留候选。
  *
  * 候选按顺序取第一个存在的实现，命中/缺失由 [HookProbe] 记录。
@@ -129,7 +128,7 @@ object HostTargets {
     const val VIDEO_PARAMS_CLASS = "tv.danmaku.biliplayerv2.service.Video\$DanmakuResolveParams"
     const val VIDEO_PARAMS_ACCESSOR = "getDanmakuResolveParams"
 
-    /** `DanmakuResolveParams`：`a:J`=avid、`b:J`=cid（与 6.5.0 同语义，另有 getAvid/getCid）。 */
+    /** `DanmakuResolveParams`：`a:J`=avid、`b:J`=cid，另有 `getAvid()` / `getCid()`。 */
     const val VIDEO_PARAMS_AID_FIELD = "a"
     const val VIDEO_PARAMS_CID_FIELD = "b"
 
