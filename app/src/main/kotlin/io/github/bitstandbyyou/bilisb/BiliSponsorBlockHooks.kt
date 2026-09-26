@@ -17,18 +17,7 @@ import io.github.bitstandbyyou.bilisb.player.PlayerBridge
 import io.github.bitstandbyyou.bilisb.player.PlayerHandle
 import io.github.bitstandbyyou.bilisb.player.VideoDirectorListener
 import io.github.bitstandbyyou.bilisb.sponsor.SponsorBlockController
-import io.github.bitstandbyyou.bilisb.model.SponsorCategories
-import io.github.bitstandbyyou.bilisb.settings.SettingsCodec
-import io.github.bitstandbyyou.bilisb.settings.SettingsKeys
-import io.github.bitstandbyyou.bilisb.settings.SettingsWriter
-import io.github.bitstandbyyou.bilisb.sponsor.SkipStatsStore
-import io.github.bitstandbyyou.bilisb.ui.Callbacks
-import io.github.bitstandbyyou.bilisb.ui.ManualSegmentItem
-import io.github.bitstandbyyou.bilisb.ui.PlayerSheetState
 import io.github.bitstandbyyou.bilisb.ui.ProgressMarkerPainter
-import io.github.bitstandbyyou.bilisb.ui.SheetStateFormatter
-import io.github.bitstandbyyou.bilisb.ui.ValueEditingCallbacks
-import io.github.bitstandbyyou.bilisb.ui.SponsorBlockPlayerSheet
 import io.github.bitstandbyyou.bilisb.ui.RemainingTimeFormatter
 import io.github.bitstandbyyou.bilisb.util.info
 import io.github.bitstandbyyou.bilisb.util.warn
@@ -91,15 +80,6 @@ object BiliSponsorBlockHooks {
         installSafely(module, "seekTrack") { hookProgressDrawable(module, cl) }
         installSafely(module, "progressCallback") { hookProgressText(module, cl) }
         installSafely(module, "mineMenu") { io.github.bitstandbyyou.bilisb.hook.MineMenuInjector.install(module, cl) }
-        if (HostTargets.MORE_PANEL_SUPPORTED) {
-            installSafely(module, "morePanel") {
-                io.github.bitstandbyyou.bilisb.hook.MorePanelInjector.install(module, cl) { rowView ->
-                    openPlayerSheet(module, rowView)
-                }
-            }
-        } else {
-            HookProbe.skip(module, "morePanel", "9.12.0 面板为 Compose，未适配")
-        }
 
         module.info(HookProbe.summary())
     }
@@ -279,12 +259,6 @@ object BiliSponsorBlockHooks {
         // 必须走按 hash 的清理:此间宿主 widget 多半已 detach,反射取 Context 会失败,
         // onPlayerDestroyed(host) 会把 Int 当 host 用(hash=0 → 状态不清理/静音不解除)。
         sponsorBlockController?.onPlayerContextDestroyed(contextHash)
-        // 播放器面板与播放页共存亡:播放页离开时若面板还开着(比如 Activity 直接被销毁),
-        // 静态 current 会永久 isShowing=true,之后面板再也打不开 + 泄漏已死的 Activity。
-        // dismiss 内部自己切主线程、幂等。
-        io.github.bitstandbyyou.bilisb.ui.SponsorBlockPlayerSheet.dismiss { message ->
-            module.info(message)
-        }
         module.info("player left: teardown done context=$contextHash host=${host.javaClass.name}")
     }
 
@@ -302,22 +276,10 @@ object BiliSponsorBlockHooks {
     /** 补绑用的挂起绑定。AtomicReference 抢占式清空,避免多线程重复 completeBind。 */
     private val pendingBindRef = java.util.concurrent.atomic.AtomicReference<PendingBind?>()
 
-    /** 最近一次绑定的 contextHash，供日志与状态组装使用。 */
-    @Volatile
-    private var lastBoundContextHash: Int = 0
-
     /**
-     * 面板里改设置用的写入器（宿主进程内长期持有）。
+     * 绑定播放器：取 Context / core 并交给 controller。
      *
-     * 必须长期持有：SettingsWriter 把变更监听注册在 prefs 上，writer 被回收后监听会失效。
-     */
-    @Volatile
-    private var settingsWriter: SettingsWriter? = null
-
-    /**
-     * 绑定播放器：取 Context / core，交给 controller，并挂提交按钮。
-     *
-     * @param host 触发绑定的对象（6.5.0 是 widget，本身是 View，用于挂播放器内 UI）
+     * @param host 触发绑定的对象（6.5.0 是 widget，本身是 View）
      * @param container 播放器容器（6.5.0 是 `tv.danmaku.biliplayerv2.f`）
      */
     private fun bindPlayer(module: XposedModule, host: Any, container: Any?) {
@@ -426,14 +388,8 @@ object BiliSponsorBlockHooks {
     ) {
         sponsorBlockController?.bindPlayerHandle(PlayerHandle(contextHash, container, core, context))
 
-        // 播放器内的「SB」提交按钮已按需求移除（不再注入任何播放器内 UI）。
-        // 提交相关的代码（客户端的 POST 提交、草稿控制器、controller.markOrSubmitCurrentPosition）
-        // 仍然保留，等以后有别的入口（例如设置页/长按菜单）时可以直接复用。
-
         // 探针：从 widget 上试取 director 服务（6.5.0 只有部分 widget 暴露）
         VideoDirectorListener.tryRegisterFromHost(module, host)
-
-        lastBoundContextHash = contextHash
 
         module.info("player bound context=$contextHash host=${host.javaClass.name} core=${core.javaClass.name}")
     }
@@ -441,8 +397,7 @@ object BiliSponsorBlockHooks {
     /**
      * reload 的最小间隔:bindPlayerContainer 在每次全屏切换/竖屏旋转都会触发,
      * 每次都无条件同步走跨进程 IPC(失败再同步读盘)会把主线程卡在 Binder 上。
-     * 间隔内改走 [ModuleSettings.load](命中进程内缓存,零 IPC);设置变更的即时生效
-     * 不受影响 —— 面板路径直接 applySnapshot,不走这里。
+     * 间隔内改走 [ModuleSettings.load](命中进程内缓存,零 IPC)。
      */
     private const val SETTINGS_RELOAD_MIN_INTERVAL_MS = 3_000L
 
@@ -475,12 +430,7 @@ object BiliSponsorBlockHooks {
         applySnapshot(module, freshSettings, source = "player enter")
     }
 
-    /**
-     * 应用一份设置快照，必要时重建 controller。
-     *
-     * 抽成独立函数是为了让「播放器面板里改开关」立即生效：那条路径直接用宿主 prefs
-     * 生成快照后调用这里，不必再走一次可能读到旧镜像的 IPC/文件回读。
-     */
+    /** 应用一份设置快照，必要时重建 controller。 */
     private fun applySnapshot(
         module: XposedModule,
         freshSettings: io.github.bitstandbyyou.bilisb.settings.SettingsSnapshot,
@@ -512,154 +462,8 @@ object BiliSponsorBlockHooks {
         }
     }
 
-    // ------------------------------------------------------------------ 播放器面板（空降助手）
-
-    /** 组装面板状态并展示；返回是否成功展示。 */
-    fun openPlayerSheet(module: XposedModule, host: Any): Boolean {
-        val activity = PlayerBridge.activity(host) ?: run {
-            HookProbe.first(module, "sheetNoActivity", 3) { host.javaClass.name }
-            return false
-        }
-        val context = PlayerBridge.context(host) ?: return false
-        val controller = sponsorBlockController ?: return false
-
-        // 面板入口可能来自宿主「更多」面板里我们自己那一行：它的 Context 是 Dialog 的
-        // ContextThemeWrapper（hash 与播放器容器的 Context 不同），所以这里优先选
-        // 「controller 真的有状态」的那个 contextHash，取不到再回落到最近绑定的那个。
-        val hostHash = PlayerBridge.contextHash(context).takeIf { it != 0 }
-        val contextHash = listOfNotNull(hostHash, lastBoundContextHash.takeIf { it != 0 })
-            .firstOrNull { controller.sheetSnapshot(it) != null }
-            ?: lastBoundContextHash.takeIf { it != 0 }
-            ?: return false
-        HookProbe.first(module, "sheetContextHash", 3) { "host=$hostHash used=$contextHash" }
-
-        val snapshot = controller.sheetSnapshot(contextHash)
-        val inside = snapshot?.currentSegment
-        val stats = SkipStatsStore.snapshot()
-
-        val manualItems = snapshot?.segments.orEmpty().map { segment ->
-            ManualSegmentItem(
-                label = SheetStateFormatter.formatManualSegmentItem(
-                    SponsorCategories.displayName(segment.category),
-                    segment.startMs,
-                    segment.endMs,
-                ),
-                startMs = segment.startMs,
-                endMs = segment.endMs,
-            )
-        }
-
-        val state = PlayerSheetState(
-            segmentCount = snapshot?.segmentCount ?: 0,
-            playheadInsideSegment = inside != null,
-            insideSegmentLabel = inside?.let {
-                "${SponsorCategories.displayName(it.category)} " +
-                    "${SheetStateFormatter.formatSeconds(it.startMs)}-${SheetStateFormatter.formatSeconds(it.endMs)}"
-            },
-            autoSkipEnabled = settings.autoSkip,
-            submitHint = "标记并提交跳过段",
-            manualSkipSummary = SheetStateFormatter.formatManualSummary(snapshot?.segmentCount ?: 0),
-            manualSegments = manualItems,
-            serviceStatus = SheetStateFormatter.formatServiceStatus(
-                ok = true,
-                skippedCount = stats.totalCount.toInt(),
-                savedSeconds = stats.totalDurationMs / 1000,
-            ),
-            showToast = settings.showToast,
-            showSeekbarMarker = settings.showSeekbarMarker,
-            showSkipStats = settings.showSkipStats,
-            minSkipDurationLabel = SheetStateFormatter.formatSeconds((settings.minSkipDurationSec * 1000).toLong()),
-            minSkipDurationMaxSec = SettingsKeys.MAX_MIN_SKIP_DURATION_SECONDS,
-            userIdLabel = settings.userId,
-        )
-
-        val callbacks = object : Callbacks, ValueEditingCallbacks {
-            override fun onToggleAutoSkip(enabled: Boolean) =
-                updateSetting(module, context, SettingsKeys.AUTO_SKIP, enabled)
-
-            override fun onSubmitSegment() {
-                sponsorBlockController?.markOrSubmitCurrentPosition(contextHash, settings.defaultSubmitCategory)
-                module.info("playerSheet: submit toggled context=$contextHash")
-            }
-
-            override fun onManualSkip(item: ManualSegmentItem) {
-                val ok = sponsorBlockController?.manualSkipTo(contextHash, item.endMs) == true
-                module.info("playerSheet: manual skip to=${item.endMs} ok=$ok")
-            }
-
-            override fun onRefreshSegments() {
-                val ok = sponsorBlockController?.refreshSegments(contextHash) == true
-                module.info("playerSheet: refresh segments ok=$ok")
-            }
-
-            override fun onToggleShowToast(enabled: Boolean) =
-                updateSetting(module, context, SettingsKeys.SHOW_TOAST, enabled)
-
-            override fun onToggleSeekbarMarker(enabled: Boolean) =
-                updateSetting(module, context, SettingsKeys.SHOW_SEEKBAR_MARKER, enabled)
-
-            override fun onToggleSkipStats(enabled: Boolean) =
-                updateSetting(module, context, SettingsKeys.SHOW_SKIP_STATS, enabled)
-
-            // 值由 ValueEditingCallbacks 带回，这里无需处理"点了编辑"
-            override fun onEditMinSkipDuration() = Unit
-
-            override fun onEditUserId() = Unit
-
-            override fun onDismiss() {
-                module.info("playerSheet: dismissed")
-            }
-
-            override fun onMinSkipDurationEdited(seconds: Float) =
-                updateSetting(module, context, SettingsKeys.MIN_SKIP_DURATION, seconds.toString())
-
-            override fun onUserIdEdited(userId: String) =
-                updateSetting(module, context, SettingsKeys.USER_ID, userId)
-        }
-
-        return SponsorBlockPlayerSheet.show(activity, state, callbacks) { message ->
-            module.info("playerSheet: $message")
-        }
-    }
-
-    /**
-     * 面板里改设置：写宿主 prefs（SettingsWriter 的监听会自动镜像 + 同步给 provider），
-     * 然后**用本进程 prefs 立刻生成快照并应用**，让改动立即生效。
-     */
-    private fun updateSetting(
-        module: XposedModule,
-        context: android.content.Context,
-        key: String,
-        value: Any,
-    ) {
-        val writer = settingsWriter
-            ?: synchronized(this) {
-                // 双检锁:多线程同时走到这里时只建一个 SettingsWriter,避免重复注册监听
-                settingsWriter ?: SettingsWriter(context.applicationContext).also { settingsWriter = it }
-            }
-        if (key == SettingsKeys.USER_ID && value is String &&
-            !io.github.bitstandbyyou.bilisb.sponsor.UserIdentityStore.isValidUserId(value)
-        ) {
-            module.info("player sheet: reject invalid userId")
-            return
-        }
-        val editor = writer.sharedPreferences.edit()
-        when (value) {
-            is Boolean -> editor.putBoolean(key, value)
-            is Float -> editor.putString(key, value.toString())
-            is Long -> editor.putString(key, value.toString())
-            is String -> editor.putString(key, value)
-        }
-        editor.apply()
-        val fresh = SettingsCodec.snapshotFromPreferences(writer.sharedPreferences)
-        applySnapshot(module, fresh, source = "player sheet: $key=${redactSettingValue(key, value)}")
-    }
-
     private fun redactUserId(userId: String): String =
         if (userId.isEmpty()) "-" else userId.take(4) + "…"
-
-    private fun redactSettingValue(key: String, value: Any): String =
-        if (key == SettingsKeys.USER_ID) redactUserId(value.toString()) else value.toString()
 
     // ------------------------------------------------------------------ 进度回调
 

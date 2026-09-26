@@ -9,7 +9,7 @@ import java.util.UUID
 /**
  * SponsorBlock 用户 ID(userID)读取/生成。
  *
- * 这个类在**点击提交按钮的主线程**上被调用,而 [getOrCreateUserId] 会做跨进程
+ * 这个类在片段提交流程中被调用,而 [getOrCreateUserId] 会做跨进程
  * Binder IPC(`SettingsSyncBridge.readSnapshot`)+ SharedPreferences 读写。
  * 因此这里做了三层缓存/降级:
  *   1. 进程内 [cachedUserId]:首次解析成功后直接返回,后续调用不再碰 IPC / 磁盘;

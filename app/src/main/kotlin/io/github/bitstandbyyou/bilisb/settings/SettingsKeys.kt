@@ -70,7 +70,7 @@ object SettingsKeys {
     const val SHOW_SEEKBAR_MARKER = "show_seekbar_marker"
     const val SHOW_TIME_DEDUCTION = "show_time_deduction"
 
-    // 是否记录/展示跳过统计（播放器面板与设置页的「跳过次数统计」开关）
+    // 是否记录/展示跳过统计（设置页的「跳过次数统计」开关）
     const val SHOW_SKIP_STATS = "show_skip_stats"
     const val SHOW_SUBMIT_BUTTON = "show_submit_button"
 

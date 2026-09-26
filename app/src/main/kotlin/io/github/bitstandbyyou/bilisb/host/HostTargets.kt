@@ -146,36 +146,6 @@ object HostTargets {
     )
     const val DRAW_METHOD = "draw"
 
-    // ---------------------------------------------------------------- 播放器「更多」面板
-
-    /**
-     * 9.12.0 的播放器「更多」面板是 `com.bilibili.playerbizcommonv2.widget.setting.channel.VideoSettingDialog`
-     * （`ComponentDialog` + `RecyclerView`），内容行是 `com.bilibili.app.gemini.ui.UIComponent` 组件，
-     * 由通用适配器 `com.bilibili.app.gemini.ui.f` 承载、刷新入口 `updateData(List)`。
-     *
-     * 这与上游 6.5.0 的「RecyclerView + `gemini.ui.f` + `f0(List)`」机制**同源但契约名不同**
-     * （行接口 6.5.0 是 `gemini.ui.i`，9.12.0 是 `gemini.ui.UIComponent`）。
-     */
-    const val MORE_PANEL_SUPPORTED = true
-
-    /** 面板适配器（通用 `UIComponent` 适配器，详情页 intro 也复用它，必须靠内容判据区分）。 */
-    val MORE_PANEL_ADAPTER_CLASSES = listOf("com.bilibili.app.gemini.ui.f")
-
-    /** 全量刷新入口：9.12.0 是 `updateData(List)`，`f0` 为 6.5.0 旧名兜底。 */
-    val MORE_PANEL_REFRESH_METHODS = listOf("updateData", "f0")
-
-    /** 行条目接口（interface，可动态代理）。 */
-    const val MORE_PANEL_ITEM_INTERFACE = "com.bilibili.app.gemini.ui.UIComponent"
-
-    /** 行视图入口接口：宿主只要求 `getRoot()` 返回行视图。 */
-    const val MORE_PANEL_HOLDER_INTERFACE = "com.bilibili.app.gemini.ui.UIComponent\$ViewEntry"
-
-    /**
-     * 判定「这是播放器设置面板」的内容特征：列表里出现该前缀包下的行。
-     * 同名适配器 `f` 也用于视频详情页的简介列表，必须做这个判定。
-     */
-    const val MORE_PANEL_ROW_PACKAGE_PREFIX = "com.bilibili.playerbizcommonv2.widget.setting."
-
     // ---------------------------------------------------------------- 「我的」页入口
 
     /**

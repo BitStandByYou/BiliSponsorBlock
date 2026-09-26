@@ -70,7 +70,7 @@ class SponsorBlockController(
     private val manualButtonSegmentKeyByContext = ConcurrentHashMap<Int, String>()
     // 当前正在倒计时的片段 key(自动跳过倒计时模式),用于离开片段时取消。
     private val countdownSegmentKeyByContext = ConcurrentHashMap<Int, String>()
-    // 该 context 已解析出的 userID:提交按钮每次点按都要用,缓存后不再走跨进程 IPC。
+    // 该 context 已解析出的 userID:片段提交复用缓存,避免重复跨进程读取。
     private val userIdByContext = ConcurrentHashMap<Int, String>()
 
     /**
@@ -152,7 +152,7 @@ class SponsorBlockController(
         }
 
         val query = SponsorBlockQuery(state.bvid, state.cid)
-        // userID 预取:settings.userId 非法时,首次提交按钮点按会在主线程做跨进程 IPC。
+        // userID 预取:settings.userId 非法时,首次提交会在调用线程做跨进程 IPC。
         // 这里提前到后台线程把 id 解析好缓存住,主线程只剩一次 map 读。
         if (!UserIdentityStore.isValidUserId(settings.userId)) {
             executor.execute {
@@ -236,24 +236,6 @@ class SponsorBlockController(
         submit(submission, state)
     }
 
-    /**
-     * 播放器面板的「手动跳过」：把播放头跳到指定片段的末尾。
-     *
-     * 与自动跳过的区别是**用户显式指定片段**，所以这里不再做「播放头是否已越过末尾」的判定，
-     * 但仍然会走同一套 seek + 统计逻辑；返回是否真的执行了。
-     */
-    fun manualSkipTo(contextHash: Int, endMs: Long): Boolean {
-        if (closed.get()) return false
-        val handle = playerHandles[contextHash] ?: return false
-        val state = latestStateByContext[contextHash] ?: return false
-        // 先夹负数再夹时长上限:durationMs 未知(0)时若直接 coerceIn(0, 负的 endMs) 会因 min>max 抛异常
-        val sanitized = endMs.coerceAtLeast(0L)
-        val target = sanitized.coerceIn(0L, state.durationMs.takeIf { it > 0 } ?: sanitized)
-        PlayerActions.seekTo(module, handle.core, target)
-        module.info("manual sheet skip video=${state.bvid} cid=${state.cid} to=$target")
-        return true
-    }
-
     fun cancelSubmissionDraft(contextHash: Int) {        if (closed.get()) return
         val state = latestStateByContext[contextHash] ?: return
         submissionDraftController.cancel(state)
@@ -264,7 +246,7 @@ class SponsorBlockController(
      * 取该 context 的 userID。
      *
      * 优先用设置快照里已有的 32 位 hex userID(设置页可能已经生成/改过),
-     * 避免每次点提交按钮都做一次跨进程 `SettingsSyncBridge.readSnapshot` + 磁盘读;
+     * 避免每次提交都做一次跨进程 `SettingsSyncBridge.readSnapshot` + 磁盘读;
      * 快照里没有(或格式非法)才落到 [UserIdentityStore],并把结果缓存在 controller 里。
      */
     private fun userIdForContext(contextHash: Int): String? {
@@ -334,49 +316,6 @@ class SponsorBlockController(
         val state = latestStateByContext[contextHash] ?: return null
         val segments = stateSegments(contextHash, state) ?: return null
         return state.durationMs to segments
-    }
-
-    /** 播放器面板一次取齐的快照（片段数、播放位置、是否在片段内、片段列表）。 */
-    data class SheetSnapshot(
-        val segmentCount: Int,
-        val positionMs: Long,
-        val durationMs: Long,
-        val currentSegment: SponsorSegment?,
-        val segments: List<SponsorSegment>,
-    )
-
-    /**
-     * 播放器面板用：当前视频的片段与播放头状态。
-     *
-     * `currentSegment` 用半开区间 `[startMs, endMs)` 判定，与 [SkipDecision] 保持一致。
-     */
-    fun sheetSnapshot(contextHash: Int): SheetSnapshot? {
-        if (closed.get()) return null
-        val state = latestStateByContext[contextHash] ?: return null
-        val segments = stateSegments(contextHash, state).orEmpty()
-        val positionMs = currentPositionMs(contextHash) ?: state.currentPositionMs
-        val current = segments.firstOrNull { positionMs >= it.startMs && positionMs < it.endMs }
-        return SheetSnapshot(
-            segmentCount = segments.size,
-            positionMs = positionMs,
-            durationMs = state.durationMs,
-            currentSegment = current,
-            segments = segments,
-        )
-    }
-
-    /**
-     * 播放器面板的「刷新片段」：清掉当前视频缓存并忽略缓存重新拉取。
-     *
-     * 与 [onVideoIds] 的区别是不受 TTL 缓存/in-flight 去重阻挡（用户显式要求刷新）。
-     */
-    fun refreshSegments(contextHash: Int): Boolean {
-        if (closed.get()) return false
-        val state = latestStateByContext[contextHash] ?: return false
-        val query = SponsorBlockQuery(state.bvid, state.cid)
-        repository.clear(query)
-        scheduleSegmentFetch(videoKey(state), query, ignoreCache = true, "segments refreshed")
-        return true
     }
 
     fun onProgress(contextHash: Int, positionMs: Long, durationMs: Long) {
@@ -889,5 +828,3 @@ class SponsorBlockController(
         private const val SANITIZED_CACHE_MAX = 64
     }
 }
-
-

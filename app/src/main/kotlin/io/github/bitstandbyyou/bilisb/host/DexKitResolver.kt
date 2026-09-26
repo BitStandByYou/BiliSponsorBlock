@@ -21,18 +21,11 @@ object ResolvedTargets {
     @Volatile
     var mineAdapterClasses: List<String>? = null
 
-    /** 播放器「更多」面板的通用 `UIComponent` 适配器。 */
-    @Volatile
-    var morePanelAdapterClasses: List<String>? = null
-
     val effectiveSeekTrackClasses: List<String>
         get() = seekTrackClasses ?: HostTargets.SEEK_TRACK_CLASSES
 
     val effectiveMineAdapterClasses: List<String>
         get() = mineAdapterClasses ?: HostTargets.MINE_ADAPTER_CLASSES
-
-    val effectiveMorePanelAdapterClasses: List<String>
-        get() = morePanelAdapterClasses ?: HostTargets.MORE_PANEL_ADAPTER_CLASSES
 }
 
 /**
@@ -47,7 +40,6 @@ object ResolvedTargets {
 object DexKitResolver {
     private const val SEEK_PACKAGE_PREFIX = "com.bilibili.playerbizcommonv2.widget.seek.v3."
     private const val MINE_PACKAGE_PREFIX = "tv.danmaku.bili.ui.main2.mine."
-    private const val GEMINI_UI_PACKAGE_PREFIX = "com.bilibili.app.gemini.ui."
     private const val DRAWABLE = "android.graphics.drawable.Drawable"
     private const val ADAPTER = "androidx.recyclerview.widget.RecyclerView\$Adapter"
     private const val CANVAS = "android.graphics.Canvas"
@@ -77,9 +69,7 @@ object DexKitResolver {
     fun resolve(module: XposedModule, apkPath: String, classLoader: ClassLoader) {
         val needSeek = !candidatesAllPresent(classLoader, HostTargets.SEEK_TRACK_CLASSES)
         val needMine = !candidatesAllPresent(classLoader, HostTargets.MINE_ADAPTER_CLASSES)
-        val needPanel = HostTargets.MORE_PANEL_SUPPORTED &&
-            !candidatesAllPresent(classLoader, HostTargets.MORE_PANEL_ADAPTER_CLASSES)
-        if (!needSeek && !needMine && !needPanel) {
+        if (!needSeek && !needMine) {
             module.info("混淆锚点候选名全部存在，跳过 DexKit 解析")
             return
         }
@@ -125,26 +115,6 @@ object DexKitResolver {
                         module.info("DexKit 定位 mineAdapter：$found")
                     } else {
                         module.warn("DexKit 未找到 mineAdapter，沿用候选名")
-                    }
-                }
-                if (needPanel) {
-                    val found = bridge.findClass {
-                        matcher {
-                            className(GEMINI_UI_PACKAGE_PREFIX, StringMatchType.StartsWith, false)
-                            superClass(ADAPTER, StringMatchType.Equals, false)
-                            methods {
-                                add {
-                                    name = "updateData"
-                                    paramTypes = listOf("java.util.List")
-                                }
-                            }
-                        }
-                    }.map { it.name }
-                    if (found.isNotEmpty()) {
-                        ResolvedTargets.morePanelAdapterClasses = found
-                        module.info("DexKit 定位 morePanelAdapter：$found")
-                    } else {
-                        module.warn("DexKit 未找到 morePanelAdapter，沿用候选名")
                     }
                 }
             }

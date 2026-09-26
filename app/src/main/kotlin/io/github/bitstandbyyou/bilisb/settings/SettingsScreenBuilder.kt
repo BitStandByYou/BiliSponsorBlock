@@ -141,7 +141,7 @@ object SettingsScreenBuilder {
         onSponsorBlockClick: () -> Unit,
     ): LinearLayout {
         // 控制中心 = B 站风格:浅灰页面底(#F1F2F3)+ 白色圆角卡片 + 品牌粉头图(#FB7299)。
-        // 行内文字用 B 站 App 的固定色板,不跟随宿主主题(与播放器面板的浅色卡片取舍一致)。
+        // 行内文字用 B 站 App 的固定色板,不跟随宿主主题,保证浅色卡片上的对比度。
         fun card(block: LinearLayout.() -> Unit): LinearLayout = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             background = biliCard(activity, BILI_CARD_BG, 10)
@@ -344,7 +344,7 @@ object SettingsScreenBuilder {
         // 模块进程下显示说明文案,不显示假数据。
         if (activity.packageName == SettingsSyncBridge.MODULE_PACKAGE) {
             parent.addView(TextView(activity).apply {
-                text = "统计只记录在宿主进程内,请在播放器「空降助手」面板查看。"
+                text = "统计数据仅记录在哔哩哔哩宿主进程内。"
                 textSize = 12f
                 setTextColor(Color.GRAY)
                 setPadding(0, 0, 0, dp(activity, 8))
