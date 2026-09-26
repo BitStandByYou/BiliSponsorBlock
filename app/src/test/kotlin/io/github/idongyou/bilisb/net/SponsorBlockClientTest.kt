@@ -174,7 +174,7 @@ class SponsorBlockClientTest {
         val body = client.buildSubmitBody(submission(userId = "user 1", category = category))
 
         assertTrue(body.startsWith("userID=user+1&"))
-        assertTrue(body.contains("&userAgent=Bili2233%2F1.0+%28LSPosed%29&"))
+        assertTrue(body.contains("&userAgent=BiliSponsorBlock%2F1.0+%28LSPosed%29&"))
         assertTrue(body.contains("&videoID=BV14741127BN&"))
         assertTrue(body.contains("&cid=123&"))
         assertTrue(body.contains("&actionType=skip&"))
