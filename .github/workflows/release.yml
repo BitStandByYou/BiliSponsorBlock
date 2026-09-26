@@ -66,7 +66,7 @@ jobs:
         run: ./gradlew :app:assembleRelease
 
       - name: 准备 Release 附件
-        run: cp app/build/outputs/apk/release/app-release.apk "app/build/outputs/apk/release/哔哩哔哩空降助手-${RELEASE_TAG}.apk"
+        run: cp app/build/outputs/apk/release/app-release.apk "app/build/outputs/apk/release/BiliSponsorBlock-${RELEASE_TAG}.apk"
 
       - name: 创建 GitHub Release
         uses: softprops/action-gh-release@v2
@@ -74,4 +74,4 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           name: 哔哩哔哩空降助手 ${{ env.RELEASE_TAG }}
           generate_release_notes: true
-          files: app/build/outputs/apk/release/哔哩哔哩空降助手-${{ env.RELEASE_TAG }}.apk
+          files: app/build/outputs/apk/release/BiliSponsorBlock-${{ env.RELEASE_TAG }}.apk
