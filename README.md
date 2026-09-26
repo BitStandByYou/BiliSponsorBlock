@@ -1,131 +1,77 @@
 # 哔哩哔哩空降助手
 
-一个独立的 **LSPosed / Vector** 模块：在 **哔哩哔哩国内版（`tv.danmaku.bili`）** 客户端里自动跳过
-**赞助广告、片头、自我推广、互动提醒**等片段，并在进度条上把它们标出来。
+哔哩哔哩空降助手是一个需要 Xposed 框架的模块。它使用 SponsorBlock 社区片段数据，在哔哩哔哩国内版播放视频时跳过或标记赞助内容、片头、自我推广等片段。
 
-数据来自社区众包的 [SponsorBlock](https://github.com/hanydd/BilibiliSponsorBlock/wiki/API) 公开接口。
-模块**只改本机客户端的播放行为**，不登录、不接管账号、不改任何服务端请求。
+## 适用范围
 
-> 本仓库作者：[BitStandByYou](https://github.com/BitStandByYou)（<https://github.com/BitStandByYou/BiliSponsorBlock>）。
->
-> 本仓库是 [`ch6vip/lsposed-bili-sponsorblock`](https://github.com/ch6vip/lsposed-bili-sponsorblock)（MIT）
-> 的**国内版移植**：复用了其业务层（SponsorBlock 客户端、跳过决策、设置、UI、进度条标记），
-> **Hook 层针对国内版 9.12.0 重新实现**（国内版与国际版的混淆形态完全不同，上游的 Hook 点名不可用）。
+安装前请确认设备和客户端符合以下条件：
 
-## 目标宿主
-
-| 项 | 值 |
+| 项目 | 要求 |
 | --- | --- |
-| 包名 | `tv.danmaku.bili`（哔哩哔哩国内版） |
-| 版本 | **9.12.0 / versionCode 9120300** |
-| 框架 | Vector / LSPosed，现代 libxposed API 101 |
-| 设备 | arm64-v8a，Android 16 |
+| 哔哩哔哩客户端 | **国内版 9.12.0**（包名 `tv.danmaku.bili`） |
+| Android | Android 8.0 或更高版本 |
+| 设备架构 | ARM64（`arm64-v8a`） |
+| 运行环境 | 已 Root，并安装支持现代 libxposed API 101 的 Vector 或 LSPosed |
 
-**只适配 9.12.0 这一个版本**。宿主改版 R8 重排混淆名后可能静默失效；
-被混淆的锚点已尽量交给 DexKit 运行时定位（详见 [`docs/宿主适配.md`](docs/宿主适配.md)）。
+目前只适配哔哩哔哩国内版 9.12.0。其他版本可能无法正常工作；更新哔哩哔哩后如遇到问题，请先确认客户端版本是否仍受支持。
 
 ## 功能
 
-- **自动跳过** —— 进入片段时自动跳到片段末尾，可选「N 秒后跳过 + 取消」
-- **手动跳过** —— 改为在片段内显示跳过按钮，点按才跳
-- **片段静音** —— 对 `mute` 类片段静音而非跳过
-- **最小片段时长过滤** —— 太短的片段不跳，避免进度条抖动
-- **进度条彩色标记** —— 9 个分类各自着色，颜色可自定义
-- **剩余时长扣减** —— 总时长减去已跳过时长
-- **跳过 Toast 提示** / **跳过次数统计**（累计次数与节省时长，可重置）
-- **片段提交** —— 标记片段起点/终点并提交到数据源
-- **两处入口**：玩家播放器右上角「⋯ → 更多」里的 **空降助手** 行（打开片段面板），以及宿主「我的」页里注入的 **哔哩哔哩空降助手** 行（打开设置 UI）
+- 自动跳过片段；也可改为手动点击跳过，或设置跳过倒计时。
+- 对标记为静音的片段静音播放。
+- 在播放器进度条显示不同类别的片段标记，并可自定义标记颜色。
+- 可按类别启用或关闭片段，并设置最短片段时长。
+- 可选择显示跳过提示、扣减剩余时长和统计跳过次数。
+- 可在播放器中查看片段、刷新数据，以及标记并提交片段。
 
-可识别的分类：赞助/恰饭、自我推广、互动提醒、开场动画、结束画面、回顾/概要、非音乐片段、填充内容、精彩时刻。
-
-## 环境要求
-
-| 项 | 要求 |
-| --- | --- |
-| Root | 需要（KernelSU / Magisk 均可） |
-| 框架 | [Vector](https://github.com/JingMatrix/Vector) 或 LSPosed，需支持 **libxposed API 101** |
-| Android | 8.0+（`minSdk 26`，DexKit 需要未压缩 so） |
-| 宿主客户端 | **哔哩哔哩国内版 `tv.danmaku.bili` 9.12.0** |
+支持的片段类别包括赞助/恰饭、自我推广、互动提醒、开场动画、结束画面、回顾/概要、非音乐片段、填充内容和精彩时刻。实际效果取决于所用数据源中是否已有对应视频的片段数据。
 
 ## 安装与启用
 
-```bash
-# 构建
-./gradlew :app:assembleDebug
-# 产物：app/build/outputs/apk/debug/app-debug.apk
+1. 获取可信来源提供的模块 APK，并像普通应用一样安装。
+2. 打开 Vector 或 LSPosed 管理界面，启用“哔哩哔哩空降助手”模块。
+3. 将模块作用域设为“哔哩哔哩”（`tv.danmaku.bili`）。
+4. 强制停止并重新打开哔哩哔哩；必要时重启设备，让模块生效。
 
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+模块**没有桌面图标**。启用后，设置入口位于哔哩哔哩「我的」页面中的 **哔哩哔哩空降助手**；播放视频时，可从播放器右上角「⋯ → 更多」打开空降助手面板。
 
-# Vector（KernelSU 系统模块）启用与作用域；路径随框架安装方式可能不同
-su -c '/data/adb/modules/zygisk_vector/cli modules enable io.github.bitstandbyyou.bilisb'
-su -c '/data/adb/modules/zygisk_vector/cli scope set io.github.bitstandbyyou.bilisb tv.danmaku.bili/0'
+## 设置说明
 
-# 强制停止宿主再打开，让 Hook 生效
-adb shell am force-stop tv.danmaku.bili
-```
+在「我的 → 哔哩哔哩空降助手」中可以调整模块设置，常用选项如下：
 
-启用后无需任何操作即生效。设置页在宿主「我的」页里的 **哔哩哔哩空降助手** 行。
-模块**没有桌面图标**（不声明 LAUNCHER）；调试时可直接打开设置页：
-
-```bash
-adb shell am start -n io.github.bitstandbyyou.bilisb/.settings.LauncherActivity
-```
-
-## 设置项
-
-| 分组 | 项 | 默认 | 说明 |
-| --- | --- | --- | --- |
-| 总开关 | 启用 SponsorBlock | 开 | 关闭后模块完全不工作 |
-| 自动跳过 | 自动跳过 | 开 | 检测到片段时自动跳过 |
-| | 手动跳过 | 关 | 片段内显示跳过按钮，点按才跳 |
-| | 片段静音 | 关 | 对 `mute` 类片段静音而非跳过 |
-| | 最小片段时长（秒） | 0 | 短于此值的片段不跳、不显示按钮；0 = 不过滤 |
-| | 自动跳过倒计时（秒） | 0 | >0 时先显示「N 秒后跳过 [取消]」 |
-| 跳过类别 | 9 个分类开关 | 全开 | 逐个分类启用/禁用 |
-| 标记颜色 | — | 见设置页 | 点色块自定义各分类颜色 |
-| 界面显示 | 跳过提示 / 进度条标记 / 时间扣减 / 跳过次数统计 | 开 | — |
-| 服务器 | 服务器地址 | `https://bsbsb.top` | 任何兼容 SponsorBlock API 的实例 |
-| | 缓存 TTL（分钟） | 60 | 拉取结果的本地缓存时长 |
-| | 默认标记类别 | `sponsor` | 提交片段时的默认分类 |
-| 提交配置 | 用户 ID | 首次使用自动生成 | 本地 UUID，与 B 站账号无关 |
+| 设置 | 说明 |
+| --- | --- |
+| 启用 SponsorBlock | 模块总开关。关闭后不再处理片段。 |
+| 自动跳过 / 手动跳过 | 自动跳过命中的片段，或在片段内显示按钮供手动跳过。 |
+| 片段静音 | 对静音类别片段静音，而不是跳过。 |
+| 最小片段时长 | 忽略短于所设时长的片段；设为 `0` 表示不按时长过滤。 |
+| 自动跳过倒计时 | 自动跳过前等待指定秒数；设为 `0` 表示立即跳过。 |
+| 跳过类别与标记颜色 | 分别启用类别，并自定义各类别的进度条颜色。 |
+| 界面显示 | 控制跳过提示、进度条标记、剩余时长扣减和跳过统计。 |
+| 服务器地址 | SponsorBlock 兼容服务地址，默认 `https://bsbsb.top`。 |
+| 用户 ID | 提交片段时使用的本地标识，与哔哩哔哩账号无关。 |
 
 ## 数据与隐私
 
-模块只和设置里填的 SponsorBlock 实例通信：
+- 查询片段时，模块只向设置中的 SponsorBlock 服务请求数据。请求使用视频 ID 的 SHA-256 前 4 位作为查询前缀，客户端再按完整视频 ID 匹配结果。
+- 只有主动提交片段时，模块才会向该服务发送视频标识、片段时间范围、类别和本机生成的用户 ID。用户 ID 不关联哔哩哔哩账号。
+- 模块不登录哔哩哔哩账号，不接管账号，也不修改哔哩哔哩服务端请求；没有遥测或埋点。设置保存在本机。
 
-- 播放时 `GET {服务器}/api/skipSegments/{prefix}`，`{prefix}` 是视频 ID 的 **SHA-256 前 4 个十六进制字符**，
-  服务端只看到不完整前缀，客户端本地按完整 videoID 过滤（SponsorBlock 官方的隐私设计）。
-- 提交片段时 `POST {服务器}/api/skipSegments`，带 videoID、时间区间、分类与本机生成的用户 ID。
-- 无任何遥测 / 埋点。设置只存本地（宿主进程的 `SharedPreferences` + JSON 镜像兜底）。
+## 常见问题
 
-## 已知限制
+**安装后桌面上找不到图标？** 这是正常的。设置入口在哔哩哔哩「我的」页面，模块本身没有桌面启动图标。
 
-- **宿主版本锁死 9.12.0**：改版后可能静默失效（混淆锚点有 DexKit 兜底，但方法语义变化需人工跟进）。
-- 小窗、切集、番剧/OGV、深色模式、切换账号尚未逐一验证。
+**模块已安装但没有效果？** 请确认框架中已启用模块、作用域包含 `tv.danmaku.bili`，并检查哔哩哔哩是否为国内版 9.12.0。修改作用域或模块状态后，请强制停止并重新打开哔哩哔哩。
 
-## 构建
+**部分视频没有跳过片段？** 片段来自社区数据，并非每个视频都有人提交；也请检查设置中的服务器和类别开关。
 
-要求 JDK 21（AGP 9.4.1，不支持 JDK 26）。本机 JDK 路径写在用户级 `~/.gradle/gradle.properties`，
-不入库。
-
-```bash
-./gradlew :app:assembleDebug
-./gradlew :app:assembleRelease   # 无签名材料时产出未签名包
-./gradlew :app:testDebugUnitTest # 单元测试
-```
-
-release 刻意**不启用 R8**：模块靠反射与动态代理对接宿主混淆成员，混淆自己收益极低。
+**更新哔哩哔哩后失效？** 当前仅适配 9.12.0。新版客户端可能需要模块更新适配。
 
 ## 致谢与许可
 
-- [BitStandByYou/BiliSponsorBlock](https://github.com/BitStandByYou/BiliSponsorBlock)
-  —— 本仓库（国内版移植），作者 BitStandByYou。
-- [`ch6vip/lsposed-bili-sponsorblock`](https://github.com/ch6vip/lsposed-bili-sponsorblock)（MIT，© 2026 ch6vip）
-  —— 本项目的上游，国内版移植复用了其业务层代码与文档结构。
-- [小电视空降助手 · hanydd/BilibiliSponsorBlock](https://github.com/hanydd/BilibiliSponsorBlock)
-  —— `bsbsb.top` 数据源与分类体系。
-- [SponsorBlock](https://sponsor.ajay.app/) —— 片段数据与 API 协议。
-- [LuckyPray/DexKit](https://github.com/LuckyPray/DexKit) —— 运行时 dex 解析，用于定位宿主混淆成员。
-- [Vector](https://github.com/JingMatrix/Vector) / [LSPosed](https://github.com/LSPosed/LSPosed) —— 框架与 API。
+- [`ch6vip/lsposed-bili-sponsorblock`](https://github.com/ch6vip/lsposed-bili-sponsorblock)：本项目移植所基于的上游项目（MIT）。
+- [小电视空降助手 · hanydd/BilibiliSponsorBlock](https://github.com/hanydd/BilibiliSponsorBlock)：数据源与分类体系。
+- [SponsorBlock](https://sponsor.ajay.app/)：片段数据与 API 协议。
+- [Vector](https://github.com/JingMatrix/Vector) / [LSPosed](https://github.com/LSPosed/LSPosed)：模块运行框架。
 
-许可：[MIT](LICENSE)。
+本项目采用 [MIT 许可证](LICENSE)。
