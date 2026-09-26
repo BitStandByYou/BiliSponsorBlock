@@ -43,3 +43,5 @@ keytool -genkeypair -v \
 5. 在仓库 **Actions** 页面查看“发布安装包”工作流。成功后，在 **Releases** 页面可找到该版本和 `哔哩哔哩空降助手-v1.0.0.apk` 附件。
 
 工作流会检查标签版本和 `MODULE_VERSION_NAME` 是否相同；缺少签名 Secrets 或版本不匹配时会停止，不会发布未签名或版本标错的 APK。Release 说明由 GitHub 根据标签间的提交自动生成，发布前可在 GitHub Releases 页面检查或编辑。
+
+若标签已经存在但需要重试，在 **Actions → 发布安装包 → Run workflow** 中选择 `master` 分支，并将 `release_tag` 填为要发布的标签（例如 `v1.0.0`）。

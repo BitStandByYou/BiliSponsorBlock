@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 要发布的版本标签，例如 v1.0.0
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -13,7 +19,8 @@ jobs:
     name: 构建并发布 APK
     runs-on: ubuntu-latest
     env:
-      KEYSTORE_FILE: ${{ runner.temp }}/bilisb-release.jks
+      KEYSTORE_FILE: bilisb-release.p12
+      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
       KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
       KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
       KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
@@ -35,8 +42,6 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: 检查标签版本
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           tag_version="${RELEASE_TAG#v}"
           module_version="$(sed -n 's/^[[:space:]]*val MODULE_VERSION_NAME = "\([^"]*\)".*/\1/p' app/build.gradle.kts)"
@@ -59,13 +64,12 @@ jobs:
         run: ./gradlew :app:assembleRelease
 
       - name: 准备 Release 附件
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
         run: cp app/build/outputs/apk/release/app-release.apk "app/build/outputs/apk/release/哔哩哔哩空降助手-${RELEASE_TAG}.apk"
 
       - name: 创建 GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: 哔哩哔哩空降助手 ${{ github.ref_name }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: 哔哩哔哩空降助手 ${{ env.RELEASE_TAG }}
           generate_release_notes: true
-          files: app/build/outputs/apk/release/哔哩哔哩空降助手-${{ github.ref_name }}.apk
+          files: app/build/outputs/apk/release/哔哩哔哩空降助手-${{ env.RELEASE_TAG }}.apk
