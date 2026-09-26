@@ -227,8 +227,6 @@ class SettingsCodecTest {
         categoryColors = SettingsKeys.CATEGORY_COLOR_DEFAULTS.mapValues { (category, _) ->
             if (category == "sponsor") 0xFF123456.toInt() else 0xFF654321.toInt()
         },
-        ipLocation = true,
-        shareQq = true,
     )
 
     /** Bundle 在纯 JVM 单测里是否真的可用（Robolectric / 完整 android.jar 时才为 true）。 */

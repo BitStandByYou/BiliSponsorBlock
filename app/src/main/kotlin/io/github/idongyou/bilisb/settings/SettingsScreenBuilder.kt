@@ -139,7 +139,6 @@ object SettingsScreenBuilder {
         showStatusPanel: Boolean = false,
         statusWriter: SettingsWriter? = null,
         onSponsorBlockClick: () -> Unit,
-        onEnhanceClick: (() -> Unit)? = null,
     ): LinearLayout {
         // 控制中心 = B 站风格:浅灰页面底(#F1F2F3)+ 白色圆角卡片 + 品牌粉头图(#FB7299)。
         // 行内文字用 B 站 App 的固定色板,不跟随宿主主题(与播放器面板的浅色卡片取舍一致)。
@@ -175,7 +174,7 @@ object SettingsScreenBuilder {
                     setTypeface(typeface, Typeface.BOLD)
                 })
                 addView(TextView(activity).apply {
-                    text = "SponsorBlock · B 站增强 —— 开源 LSPosed 模块(MIT)"
+                    text = "SponsorBlock · 开源 LSPosed 模块(MIT)"
                     textSize = 12f
                     setTextColor(0xE6FFFFFF.toInt())
                     setPadding(0, dp(activity, 2), 0, 0)
@@ -186,13 +185,9 @@ object SettingsScreenBuilder {
                 addView(card { addView(statusPanel(activity, statusWriter)) }, cardLayoutParams())
             }
 
-            // 功能卡片:SponsorBlock / B 站增强
+            // 功能卡片:SponsorBlock
             addView(card {
                 addView(entryRow(activity, "SponsorBlock", "赞助/片头等片段的跳过与标记设置", onSponsorBlockClick))
-                if (onEnhanceClick != null) {
-                    addView(biliDivider(activity))
-                    addView(entryRow(activity, "B 站增强", "IP 属地 · 互动提示 · 首页刷新 · 分享 QQ", onEnhanceClick))
-                }
             }, cardLayoutParams())
 
             // 关于卡片(版本行可点击 → 跳转 GitHub 项目页;发版说明以 GitHub Releases 为单一来源)
@@ -209,31 +204,6 @@ object SettingsScreenBuilder {
                 addView(biliDivider(activity))
                 addView(aboutItem(activity, "作者", "ch6vip"))
             })
-        }
-    }
-
-    /**
-     * 「B 站增强」详情页(移植自 BiliTamer,MIT 的客户端增强开关)。
-     * 与 [buildDetail] 同级:宿主内弹窗由 [io.github.idongyou.bilisb.settings.SponsorBlockSettingDialog]
-     * 的 showEnhance 导航,模块设置页由 LauncherActivity 直接 setContentView。
-     */
-    fun buildEnhance(activity: Activity, prefs: SharedPreferences): LinearLayout {
-        return biliPage(activity) {
-            biliSection(this, activity, "增强开关") {
-                addView(hint(activity, "移植自 BiliTamer(MIT) 的客户端增强能力,全部默认关闭"))
-                val rows = listOf(
-                    createCheckBox(activity, prefs, SettingsKeys.ENHANCE_IP_LOCATION, "评论/主页 IP 属地", "改写请求身份让服务端返回 IP 属地(重启宿主生效)", false),
-                    createCheckBox(activity, prefs, SettingsKeys.ENHANCE_HIDE_TRIPLE, "隐藏一键三连提示", "不显示三连动画与提示文案", false),
-                    createCheckBox(activity, prefs, SettingsKeys.ENHANCE_HIDE_UP_PROMPT, "隐藏 UP 提示", "不显示关注引导气泡", false),
-                    createCheckBox(activity, prefs, SettingsKeys.ENHANCE_HIDE_VOTE, "隐藏投票/互动弹幕", "不显示互动弹幕投票面板", false),
-                    createCheckBox(activity, prefs, SettingsKeys.ENHANCE_NO_AUTO_REFRESH, "首页不自动刷新", "切回首页/从后台返回不重置列表(下拉仍可手动刷新)", false),
-                    createCheckBox(activity, prefs, SettingsKeys.ENHANCE_SHARE_QQ, "分享到 QQ", "分享面板补回 QQ 入口(需已安装 QQ)", false),
-                )
-                rows.forEachIndexed { index, row ->
-                    if (index > 0) addView(biliDividerInner(activity))
-                    addView(row)
-                }
-            }
         }
     }
 

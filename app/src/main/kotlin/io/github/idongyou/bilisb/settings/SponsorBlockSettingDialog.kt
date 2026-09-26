@@ -8,10 +8,8 @@ import android.content.SharedPreferences
  * 宿主内设置弹窗。
  *
  * 弹窗层级(每层都有专名,文档/日志/沟通统一用这套叫法):
- *   - **控制中心**(`showMain`,标题「控制中心」):总入口,聚合 SponsorBlock、
- *     B 站增强两个入口行与「关于」;
+ *   - **控制中心**(`showMain`,标题「控制中心」):总入口,聚合 SponsorBlock 设置与「关于」;
  *   - **SponsorBlock 详情**(`showDetail`,标题「SponsorBlock」):跳过/静音/统计/服务器等;
- *   - **B 站增强详情**(`showEnhance`,标题「B 站增强」):移植自 BiliTamer 的增强开关。
  *
  * 本类只负责弹窗导航和 [SettingsWriter] 生命周期；具体设置内容由
  * [SettingsScreenBuilder] 构建，和模块入口 Activity 共用同一套 UI。
@@ -77,7 +75,6 @@ object SponsorBlockSettingDialog {
         val root = SettingsScreenBuilder.buildMain(
             activity,
             onSponsorBlockClick = { forward { showDetail(activity, onDismiss) } },
-            onEnhanceClick = { forward { showEnhance(activity, onDismiss) } },
         )
 
         // 控制中心:主弹窗的专名(2026-09-19 起,不再与模块名 Bili2233 混用)。
@@ -140,38 +137,4 @@ object SponsorBlockSettingDialog {
         dialog.show()
     }
 
-    /** 「B 站增强」详情弹窗(与 showDetail 同一套导航语义,返回键/「返回」回主页)。 */
-    private fun showEnhance(activity: Activity, onDismiss: (() -> Unit)?) {
-        if (activity.isFinishing || activity.isDestroyed) return
-        val dialogRef = arrayOfNulls<AlertDialog>(1)
-        fun back() {
-            dialogRef[0]?.currentFocus?.clearFocus()
-            // 先 dismiss 当前 detail 弹窗再导航:onClick 返回后 AOSP 会自动 dismiss,
-            // 直接 showMain 会造成短暂双弹窗叠加(与 showDetail 的导航写法保持一致)
-            dialogRef[0]?.dismiss()
-            showMain(activity, onDismiss)
-        }
-
-        val dialog = AlertDialog.Builder(activity)
-            .setView(
-                SettingsScreenBuilder.detailPage(
-                    activity, "B 站增强", onBack = { back() },
-                    SettingsScreenBuilder.buildEnhance(activity, prefs(activity)),
-                )
-            )
-            .create()
-        dialog.setOnCancelListener { back() }
-        dialog.setOnDismissListener {
-            // 只有当前登记的弹窗才清空，避免导航时把新弹窗的登记清掉
-            if (dialogRef[0] === currentDialog) {
-                currentDialog = null
-                currentActivity = null
-            }
-        }
-        dialogRef[0] = dialog
-        currentDialog = dialog
-        currentActivity = activity
-        applyRoundedWindow(dialog, activity)
-        dialog.show()
-    }
 }

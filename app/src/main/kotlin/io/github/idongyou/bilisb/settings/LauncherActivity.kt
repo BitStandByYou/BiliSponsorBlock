@@ -66,14 +66,7 @@ class LauncherActivity : Activity() {
             showStatusPanel = true,
             statusWriter = settingsWriter,
             onSponsorBlockClick = { showDetail() },
-            onEnhanceClick = { showEnhance() },
         )
-        setContentView(SettingsScreenBuilder.wrapScroll(this, content))
-    }
-
-    private fun showEnhance() {
-        detailVisible = true
-        val content = SettingsScreenBuilder.buildEnhance(this, settingsWriter.sharedPreferences)
         setContentView(SettingsScreenBuilder.wrapScroll(this, content))
     }
 
