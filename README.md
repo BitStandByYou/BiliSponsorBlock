@@ -25,6 +25,13 @@
 
 支持的片段类别包括赞助/恰饭、自我推广、互动提醒、开场动画、结束画面、回顾/概要、非音乐片段、填充内容和精彩时刻。实际效果取决于所用数据源中是否已有对应视频的片段数据。
 
+## 效果预览
+
+设置页可以调整自动跳过、静音和片段类别；播放器进度条会以颜色标出对应片段。
+
+![SponsorBlock 功能设置界面](https://raw.githubusercontent.com/BitStandByYou/BiliSponsorBlock/master/docs/%E6%95%88%E6%9E%9C%E5%9B%BE/%E5%8A%9F%E8%83%BD%E8%AE%BE%E7%BD%AE.png)  ![播放器进度条片段标记](https://raw.githubusercontent.com/BitStandByYou/BiliSponsorBlock/master/docs/%E6%95%88%E6%9E%9C%E5%9B%BE/%E6%92%AD%E6%94%BE%E5%99%A8%E7%89%87%E6%AE%B5%E6%A0%87%E8%AE%B0.jpg)
+
+
 ## 安装与启用
 
 1. 获取可信来源提供的模块 APK，并像普通应用一样安装。
@@ -68,7 +75,7 @@
 
 ## 致谢与许可
 
-- [`ch6vip/lsposed-bili-sponsorblock`](https://github.com/ch6vip/lsposed-bili-sponsorblock)：本项目移植所基于的上游项目（MIT）。
+- [ch6vip/lsposed-bili-sponsorblock](https://github.com/ch6vip/lsposed-bili-sponsorblock)：本项目移植所基于的上游项目（MIT）。
 - [小电视空降助手 · hanydd/BilibiliSponsorBlock](https://github.com/hanydd/BilibiliSponsorBlock)：数据源与分类体系。
 - [SponsorBlock](https://sponsor.ajay.app/)：片段数据与 API 协议。
 - [Vector](https://github.com/JingMatrix/Vector) / [LSPosed](https://github.com/LSPosed/LSPosed)：模块运行框架。
