@@ -6,6 +6,8 @@
 数据来自社区众包的 [SponsorBlock](https://github.com/hanydd/BilibiliSponsorBlock/wiki/API) 公开接口。
 模块**只改本机客户端的播放行为**，不登录、不接管账号、不改任何服务端请求。
 
+> 本仓库作者：[BitStandByYou](https://github.com/BitStandByYou)（<https://github.com/BitStandByYou/BiliSponsorBlock>）。
+>
 > 本仓库是 [`ch6vip/lsposed-bili-sponsorblock`](https://github.com/ch6vip/lsposed-bili-sponsorblock)（MIT）
 > 的**国内版移植**：复用了其业务层（SponsorBlock 客户端、跳过决策、设置、UI、进度条标记），
 > **Hook 层针对国内版 9.12.0 重新实现**（国内版与国际版的混淆形态完全不同，上游的 Hook 点名不可用）。
@@ -55,8 +57,8 @@
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 # Vector（KernelSU 系统模块）启用与作用域；路径随框架安装方式可能不同
-su -c '/data/adb/modules/zygisk_vector/cli modules enable io.github.idongyou.bilisb'
-su -c '/data/adb/modules/zygisk_vector/cli scope set io.github.idongyou.bilisb tv.danmaku.bili/0'
+su -c '/data/adb/modules/zygisk_vector/cli modules enable io.github.bitstandbyyou.bilisb'
+su -c '/data/adb/modules/zygisk_vector/cli scope set io.github.bitstandbyyou.bilisb tv.danmaku.bili/0'
 
 # 强制停止宿主再打开，让 Hook 生效
 adb shell am force-stop tv.danmaku.bili
@@ -66,7 +68,7 @@ adb shell am force-stop tv.danmaku.bili
 模块**没有桌面图标**（不声明 LAUNCHER）；调试时可直接打开设置页：
 
 ```bash
-adb shell am start -n io.github.idongyou.bilisb/.settings.LauncherActivity
+adb shell am start -n io.github.bitstandbyyou.bilisb/.settings.LauncherActivity
 ```
 
 ## 设置项
@@ -116,8 +118,10 @@ release 刻意**不启用 R8**：模块靠反射与动态代理对接宿主混�
 
 ## 致谢与许可
 
+- [BitStandByYou/BiliSponsorBlock](https://github.com/BitStandByYou/BiliSponsorBlock)
+  —— 本仓库（国内版移植），作者 BitStandByYou。
 - [`ch6vip/lsposed-bili-sponsorblock`](https://github.com/ch6vip/lsposed-bili-sponsorblock)（MIT，© 2026 ch6vip）
-  —— 本项目由其移植而来，复用了业务层代码与文档结构。
+  —— 本项目的上游，国内版移植复用了其业务层代码与文档结构。
 - [小电视空降助手 · hanydd/BilibiliSponsorBlock](https://github.com/hanydd/BilibiliSponsorBlock)
   —— `bsbsb.top` 数据源与分类体系。
 - [SponsorBlock](https://sponsor.ajay.app/) —— 片段数据与 API 协议。

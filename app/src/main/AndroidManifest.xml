@@ -12,7 +12,7 @@
             设置入口只走宿主「我的」页注入的行（在宿主进程内以 Dialog 呈现），
             因此这里**不声明 LAUNCHER**，模块不出现在桌面。
             仍保留 Activity 并以 exported=true 声明，仅用于调试时用
-            `am start -n io.github.idongyou.bilisb/.settings.LauncherActivity` 直接打开设置页。
+            `am start -n io.github.bitstandbyyou.bilisb/.settings.LauncherActivity` 直接打开设置页。
         -->
         <activity
             android:name=".settings.LauncherActivity"

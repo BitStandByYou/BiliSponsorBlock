@@ -39,13 +39,13 @@ val MODULE_VERSION_CODE = 1
 val MODULE_VERSION_NAME = "1.0.0"
 
 android {
-    namespace = "io.github.idongyou.bilisb"
+    namespace = "io.github.bitstandbyyou.bilisb"
     compileSdk = 36
 
     defaultConfig {
         // 独立模块身份：与「哔哩哔哩空降助手」国际版（io.github.ch6vip.bilisb）以及
         // 本机 PureMe（io.github.idongyou.pureme）都不冲突，可共存。
-        applicationId = "io.github.idongyou.bilisb"
+        applicationId = "io.github.bitstandbyyou.bilisb"
         // minSdk 26：Vector 从 APK 内路径加载 libdexkit.so，需要 so 未压缩，
         // 而 useLegacyPackaging 在 minSdk >= 23 时默认为 false。
         minSdk = 26
