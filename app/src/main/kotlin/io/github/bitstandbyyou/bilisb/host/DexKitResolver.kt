@@ -25,6 +25,10 @@ object ResolvedTargets {
     @Volatile
     var relatedAvCardBindMethodName: String? = null
 
+    /** UP 主投稿视频卡片持有者（短混淆名，由 BiliSpaceVideo 绑定签名定位）。 */
+    @Volatile
+    var authorVideoCardHolderClasses: List<String>? = null
+
     val effectiveSeekTrackClasses: List<String>
         get() = seekTrackClasses ?: HostTargets.SEEK_TRACK_CLASSES
 
@@ -33,6 +37,9 @@ object ResolvedTargets {
 
     val effectiveRelatedAvCardBindMethodNames: List<String>
         get() = listOfNotNull(relatedAvCardBindMethodName, HostTargets.RELATED_AV_CARD_BIND_METHOD).distinct()
+
+    val effectiveAuthorVideoCardHolderClasses: List<String>
+        get() = authorVideoCardHolderClasses ?: HostTargets.AUTHOR_VIDEO_CARD_HOLDER_CLASSES
 }
 
 /**
@@ -49,6 +56,7 @@ object DexKitResolver {
     private const val MINE_PACKAGE_PREFIX = "tv.danmaku.bili.ui.main2.mine."
     private const val DRAWABLE = "android.graphics.drawable.Drawable"
     private const val ADAPTER = "androidx.recyclerview.widget.RecyclerView\$Adapter"
+    private const val VIEW_HOLDER = "androidx.recyclerview.widget.RecyclerView\$ViewHolder"
     private const val CANVAS = "android.graphics.Canvas"
 
     @Volatile
@@ -77,7 +85,8 @@ object DexKitResolver {
         val needSeek = !candidatesAllPresent(classLoader, HostTargets.SEEK_TRACK_CLASSES)
         val needMine = !candidatesAllPresent(classLoader, HostTargets.MINE_ADAPTER_CLASSES)
         val needRelatedAvCard = !relatedAvCardBindCandidatePresent(classLoader)
-        if (!needSeek && !needMine && !needRelatedAvCard) {
+        val needAuthorVideoCard = !authorVideoCardBindCandidatePresent(classLoader)
+        if (!needSeek && !needMine && !needRelatedAvCard && !needAuthorVideoCard) {
             module.info("混淆锚点候选名全部存在，跳过 DexKit 解析")
             return
         }
@@ -144,6 +153,26 @@ object DexKitResolver {
                         module.warn("DexKit 未能唯一定位播放页相关视频绑定方法，沿用候选名：$found")
                     }
                 }
+                if (needAuthorVideoCard) {
+                    val found = bridge.findClass {
+                        matcher {
+                            className("Yg.", StringMatchType.StartsWith, false)
+                            superClass(VIEW_HOLDER, StringMatchType.Equals, false)
+                            methods {
+                                add {
+                                    returnType = "void"
+                                    paramTypes = listOf(HostTargets.AUTHOR_SPACE_VIDEO_MODEL_CLASS, "int")
+                                }
+                            }
+                        }
+                    }.map { it.name }.distinct()
+                    if (found.size == 1) {
+                        ResolvedTargets.authorVideoCardHolderClasses = found
+                        module.info("DexKit 定位 UP 主投稿视频卡片：$found")
+                    } else {
+                        module.warn("DexKit 未能唯一定位 UP 主投稿视频卡片，沿用候选名：$found")
+                    }
+                }
             }
         }.onFailure {
             module.warn("DexKit 解析失败，回退候选名：${it.javaClass.simpleName}: ${it.message}")
@@ -167,4 +196,15 @@ object DexKitResolver {
                 method.parameterTypes[1].name == "kotlin.coroutines.Continuation"
         }
     }
+
+    private fun authorVideoCardBindCandidatePresent(classLoader: ClassLoader): Boolean =
+        HostTargets.AUTHOR_VIDEO_CARD_HOLDER_CLASSES.any { name ->
+            val clazz = runCatching { Class.forName(name, false, classLoader) }.getOrNull() ?: return@any false
+            clazz.declaredMethods.any { method ->
+                method.returnType == Void.TYPE &&
+                    method.parameterTypes.size == 2 &&
+                    method.parameterTypes[0].name == HostTargets.AUTHOR_SPACE_VIDEO_MODEL_CLASS &&
+                    method.parameterTypes[1] == Int::class.javaPrimitiveType
+            }
+        }
 }

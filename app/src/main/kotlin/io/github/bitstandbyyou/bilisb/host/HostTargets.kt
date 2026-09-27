@@ -117,6 +117,16 @@ object HostTargets {
     const val RELATED_CARD_MODEL_CLASS = "com.bilibili.ship.theseus.united.page.intro.module.relate.A0"
     const val RELATED_CARD_BASIC_INFO_CLASS = "com.bilibili.ship.theseus.united.page.intro.module.relate.B0"
 
+    /** UP 主投稿视频页的 AV 卡片持有者；绑定参数为 BiliSpaceVideo + adapter position。 */
+    val AUTHOR_VIDEO_CARD_HOLDER_CLASSES = listOf("Yg.n")
+    const val AUTHOR_SPACE_ACTIVITY_CLASS = "com.bilibili.app.authorspace.ui.AuthorSpaceActivity"
+    const val AUTHOR_SPACE_VIDEO_MODEL_CLASS = "com.bilibili.app.authorspace.api.BiliSpaceVideo"
+
+    /** 新版 UP 主空间 H5 页面与归档游标接口。 */
+    const val LOCAL_AUTHOR_SPACE_ACTIVITY_CLASS = "com.bilibili.app.authorspace.local.LocalAuthorSpaceActivity"
+    const val HILO_CLIENT_CLASS = "com.bilibili.common.hilowebview.client.HiloClient"
+    const val AUTHOR_SPACE_ARCHIVE_API_PATH = "/x/v2/space/archive/cursor"
+
     /** director 服务实现类（类名未被混淆）。 */
     val DIRECTOR_SERVICE_CLASSES = listOf(
         "tv.danmaku.biliplayerimpl.videodirector.PlayDirectorServiceV3",

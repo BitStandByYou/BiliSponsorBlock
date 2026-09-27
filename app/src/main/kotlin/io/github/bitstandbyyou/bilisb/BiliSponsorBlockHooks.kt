@@ -80,6 +80,12 @@ object BiliSponsorBlockHooks {
         installSafely(module, "playerRelatedFullVideoAds") {
             io.github.bitstandbyyou.bilisb.hook.PlayerRelatedFullVideoAdFilter.install(module, cl)
         }
+        installSafely(module, "authorSpaceFullVideoAds") {
+            io.github.bitstandbyyou.bilisb.hook.AuthorSpaceFullVideoAdFilter.install(module, cl)
+        }
+        installSafely(module, "authorSpaceH5FullVideoAds") {
+            io.github.bitstandbyyou.bilisb.hook.AuthorSpaceH5FullVideoAdFilter.install(module, cl)
+        }
 
         module.info(HookProbe.summary())
     }
