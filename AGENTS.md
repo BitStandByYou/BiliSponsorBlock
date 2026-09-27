@@ -43,6 +43,14 @@ app/src/main/resources/META-INF/xposed/
 # 产物：app/build/outputs/apk/debug/app-debug.apk
 ```
 
+## 版本发布与 Xposed Modules Repo 同步
+
+1. 更新 `app/build.gradle.kts` 中的 `MODULE_VERSION_NAME`、`MODULE_VERSION_CODE`，并在 `app/src/main/resources/META-INF/xposed/module.prop` 同步更新 `versionName`、`versionCode`。版本码必须递增；构建任务会检查两处一致。
+2. 运行 `./gradlew :app:assembleDebug` 验证构建，提交并推送版本变更到 `master`。
+3. 源仓库 `.github/workflows/release.yml` 只在推送 `v*` 标签或手动运行时发布。标签去掉开头的 `v` 后必须与 `MODULE_VERSION_NAME` 完全相同：版本 `1.1` 应使用 `v1.1`（不是 `v1.1.0`）。推送标签后，Actions 使用仓库签名 Secrets 构建签名 APK，并创建源仓库 Release；发布前确认该工作流成功且 APK 附件存在。
+4. Xposed Modules Repo（`Xposed-Modules-Repo/io.github.bitstandbyyou.bilisb`）不会自动从源仓库复制 APK，也不会替模块构建 APK。需手动同步该仓库的 `README.md`、`SUMMARY`，并将源 Release 的 APK 附加到该仓库的新 Release。Release 标题使用版本名，标签格式为 `<versionCode>-<versionName>`（例如 `3-1.1`），正文填写版本更新说明。
+5. Xposed Modules Repo 的机器人会根据带 APK 的 Release 校正版本标签并触发模块索引更新；单独替换 Release 附件不会触发该机器人。确认 Tag 工作流成功，并在几分钟后检查模块仓库 Release 与模块索引。
+
 ## 安装启用（本机）
 
 ```bash
