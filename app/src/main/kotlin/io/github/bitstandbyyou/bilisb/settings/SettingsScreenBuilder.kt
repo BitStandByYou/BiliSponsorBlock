@@ -308,7 +308,7 @@ object SettingsScreenBuilder {
                         prefs,
                         SettingsKeys.HIDE_FULL_VIDEO_LABEL_CARDS,
                         "隐藏整段推广视频",
-                        "在首页推荐信息流中隐藏带有 SponsorBlock 整段视频标签的卡片",
+                        "首页推荐隐藏整段推广卡片；播放页更多视频仅隐藏带整段广告标签的卡片",
                         true,
                     ),
                 )

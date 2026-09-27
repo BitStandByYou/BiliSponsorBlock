@@ -36,5 +36,7 @@ data class FullVideoLabel(val category: String) {
             val selected = PRIORITY.firstOrNull { it in categories } ?: return null
             return FullVideoLabel(selected)
         }
+
+        fun isFullVideoAd(label: FullVideoLabel?): Boolean = label?.category == CATEGORY_SPONSOR
     }
 }

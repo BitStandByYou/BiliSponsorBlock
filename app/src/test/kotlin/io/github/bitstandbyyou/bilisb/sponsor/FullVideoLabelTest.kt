@@ -36,6 +36,14 @@ class FullVideoLabelTest {
         assertNull(FullVideoLabel.select(listOf(segment("intro", "full"))))
     }
 
+    @Test
+    fun onlyWholeVideoSponsorLabelCountsAsAnAd() {
+        assertEquals(true, FullVideoLabel.isFullVideoAd(FullVideoLabel("sponsor")))
+        assertEquals(false, FullVideoLabel.isFullVideoAd(FullVideoLabel("exclusive_access")))
+        assertEquals(false, FullVideoLabel.isFullVideoAd(FullVideoLabel("selfpromo")))
+        assertEquals(false, FullVideoLabel.isFullVideoAd(null))
+    }
+
     private fun segment(category: String, actionType: String) = SponsorSegment(
         category = category,
         actionType = actionType,

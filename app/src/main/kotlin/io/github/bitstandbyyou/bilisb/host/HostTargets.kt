@@ -109,6 +109,14 @@ object HostTargets {
     const val RECOMMENDATION_CARD_BIND_METHOD = "onBindViewHolder"
     const val RECOMMENDATION_FEED_FRAGMENT = "com.bilibili.pegasus.PegasusFragment"
 
+    /** 播放页「更多视频」相关视频 AV 卡片渲染组件与 ViewBinding 类型。 */
+    const val RELATED_AV_CARD_COMPONENT_CLASS =
+        "com.bilibili.ship.theseus.united.page.intro.module.relate.av.RelateAvComponent"
+    const val RELATED_AV_CARD_BIND_METHOD = "c"
+    const val RELATED_AV_CARD_BINDING_CLASS = "Oy0.k0"
+    const val RELATED_CARD_MODEL_CLASS = "com.bilibili.ship.theseus.united.page.intro.module.relate.A0"
+    const val RELATED_CARD_BASIC_INFO_CLASS = "com.bilibili.ship.theseus.united.page.intro.module.relate.B0"
+
     /** director 服务实现类（类名未被混淆）。 */
     val DIRECTOR_SERVICE_CLASSES = listOf(
         "tv.danmaku.biliplayerimpl.videodirector.PlayDirectorServiceV3",

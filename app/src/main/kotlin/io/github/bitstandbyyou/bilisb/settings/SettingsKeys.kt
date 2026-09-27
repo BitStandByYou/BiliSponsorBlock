@@ -73,7 +73,7 @@ object SettingsKeys {
     // 是否记录/展示跳过统计（设置页的「跳过次数统计」开关）
     const val SHOW_SKIP_STATS = "show_skip_stats"
     const val SHOW_SUBMIT_BUTTON = "show_submit_button"
-    /** 首页推荐信息流中隐藏已标记为整段推广的视频卡片。 */
+    /** 首页推荐隐藏整段推广卡片；播放页更多视频仅隐藏整段广告卡片。 */
     const val HIDE_FULL_VIDEO_LABEL_CARDS = "hide_full_video_label_cards"
 
     // 分类标记颜色:key 为 "color_<category>",值为 "#RRGGBB" hex 字符串。

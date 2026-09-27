@@ -12,8 +12,8 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * 播放前整段标签查询。按服务地址 + bvid 缓存正/负结果，并合并同一视频的并发查询。
- * 网络访问始终在后台线程；回调统一切回主线程供路由门禁更新 UI。
+ * 整段视频标签查询。按服务地址 + bvid 缓存正/负结果，并合并同一视频的并发查询。
+ * 网络访问始终在后台线程；回调统一切回主线程供卡片过滤更新 UI。
  */
 internal class FullVideoLabelLookup(
     private val serverAddress: String,

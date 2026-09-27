@@ -21,11 +21,18 @@ object ResolvedTargets {
     @Volatile
     var mineAdapterClasses: List<String>? = null
 
+    /** 播放页相关 AV 卡片绑定方法（`ViewBinding, Continuation`）。 */
+    @Volatile
+    var relatedAvCardBindMethodName: String? = null
+
     val effectiveSeekTrackClasses: List<String>
         get() = seekTrackClasses ?: HostTargets.SEEK_TRACK_CLASSES
 
     val effectiveMineAdapterClasses: List<String>
         get() = mineAdapterClasses ?: HostTargets.MINE_ADAPTER_CLASSES
+
+    val effectiveRelatedAvCardBindMethodNames: List<String>
+        get() = listOfNotNull(relatedAvCardBindMethodName, HostTargets.RELATED_AV_CARD_BIND_METHOD).distinct()
 }
 
 /**
@@ -69,7 +76,8 @@ object DexKitResolver {
     fun resolve(module: XposedModule, apkPath: String, classLoader: ClassLoader) {
         val needSeek = !candidatesAllPresent(classLoader, HostTargets.SEEK_TRACK_CLASSES)
         val needMine = !candidatesAllPresent(classLoader, HostTargets.MINE_ADAPTER_CLASSES)
-        if (!needSeek && !needMine) {
+        val needRelatedAvCard = !relatedAvCardBindCandidatePresent(classLoader)
+        if (!needSeek && !needMine && !needRelatedAvCard) {
             module.info("混淆锚点候选名全部存在，跳过 DexKit 解析")
             return
         }
@@ -117,6 +125,25 @@ object DexKitResolver {
                         module.warn("DexKit 未找到 mineAdapter，沿用候选名")
                     }
                 }
+                if (needRelatedAvCard) {
+                    val found = bridge.findMethod {
+                        matcher {
+                            declaredClass = HostTargets.RELATED_AV_CARD_COMPONENT_CLASS
+                            returnType = "java.lang.Object"
+                            paramCount = 2
+                            paramTypes = listOf(
+                                HostTargets.RELATED_AV_CARD_BINDING_CLASS,
+                                "kotlin.coroutines.Continuation",
+                            )
+                        }
+                    }.map { it.name }.distinct()
+                    if (found.size == 1) {
+                        ResolvedTargets.relatedAvCardBindMethodName = found.single()
+                        module.info("DexKit 定位播放页相关视频绑定方法：${found.single()}")
+                    } else {
+                        module.warn("DexKit 未能唯一定位播放页相关视频绑定方法，沿用候选名：$found")
+                    }
+                }
             }
         }.onFailure {
             module.warn("DexKit 解析失败，回退候选名：${it.javaClass.simpleName}: ${it.message}")
@@ -127,5 +154,17 @@ object DexKitResolver {
     private fun candidatesAllPresent(classLoader: ClassLoader, candidates: List<String>): Boolean {
         if (candidates.isEmpty()) return false
         return candidates.all { runCatching { Class.forName(it, false, classLoader) }.getOrNull() != null }
+    }
+
+    private fun relatedAvCardBindCandidatePresent(classLoader: ClassLoader): Boolean {
+        val clazz = runCatching {
+            Class.forName(HostTargets.RELATED_AV_CARD_COMPONENT_CLASS, false, classLoader)
+        }.getOrNull() ?: return false
+        return clazz.declaredMethods.any { method ->
+            method.name == HostTargets.RELATED_AV_CARD_BIND_METHOD &&
+                method.parameterTypes.size == 2 &&
+                method.parameterTypes[0].name == HostTargets.RELATED_AV_CARD_BINDING_CLASS &&
+                method.parameterTypes[1].name == "kotlin.coroutines.Continuation"
+        }
     }
 }
