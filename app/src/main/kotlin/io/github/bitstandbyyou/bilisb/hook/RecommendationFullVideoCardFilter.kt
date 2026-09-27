@@ -156,10 +156,11 @@ object RecommendationFullVideoCardFilter {
                         "bvid=${bound.bvid} label=${label?.category ?: "none"}"
                     }
                     if (label != null) {
-                        if (removeCard(module, holder, adapter, item)) {
-                            HookProbe.first(module, "recommendationFullVideoCardHidden", 12) {
-                                "bvid=${bound.bvid} category=${label.category}"
-                            }
+                        // lookup may return a cached result synchronously while onBindViewHolder is
+                        // still running. Never mutate the adapter from that callback: RecyclerView
+                        // would observe a list size different from the layout state it is binding.
+                        mainHandler.post {
+                            removeCardWhenSafe(module, holder, bound, adapter, item, label.category)
                         }
                     }
                 }
@@ -169,6 +170,80 @@ object RecommendationFullVideoCardFilter {
             }
         }
     }
+
+    /** Apply the adapter mutation only after the current bind/layout pass has completed. */
+    private fun removeCardWhenSafe(
+        module: XposedModule,
+        holder: Any,
+        bound: BoundCard,
+        adapter: Any,
+        item: Any,
+        category: String,
+        attempt: Int = 0,
+    ) {
+        val view = bound.view.get() ?: return
+        val fragment = bound.fragment.get() ?: return
+        val prefs = view.context.getSharedPreferences(SettingsKeys.PREFS_NAME, Context.MODE_PRIVATE)
+        if (!view.isAttachedToWindow ||
+            !isCurrentBinding(holder, bound, adapter, item, fragment, view) ||
+            fragment.javaClass.name != HostTargets.RECOMMENDATION_FEED_FRAGMENT ||
+            activityFrom(view.context)?.javaClass?.name != "tv.danmaku.bili.MainActivityV2" ||
+            !shouldHideCards(prefs)
+        ) return
+
+        val recyclerView = enclosingRecyclerView(view) ?: return
+        if (isComputingLayout(recyclerView)) {
+            if (attempt < MAX_LAYOUT_RETRIES) {
+                recyclerView.postDelayed({
+                    removeCardWhenSafe(module, holder, bound, adapter, item, category, attempt + 1)
+                }, LAYOUT_RETRY_DELAY_MS)
+            } else {
+                module.warn("recommendation card removal deferred: RecyclerView stayed in layout bvid=${bound.bvid}")
+            }
+            return
+        }
+
+        if (removeCard(module, holder, adapter, item)) {
+            HookProbe.first(module, "recommendationFullVideoCardHidden", 12) {
+                "bvid=${bound.bvid} category=$category"
+            }
+        }
+    }
+
+    private fun isCurrentBinding(
+        holder: Any,
+        bound: BoundCard,
+        adapter: Any,
+        item: Any,
+        fragment: Any,
+        view: View,
+    ): Boolean = synchronized(lock) {
+        val current = boundCards[holder]
+        current === bound && current.item.get() === item && current.adapter.get() === adapter &&
+            current.fragment.get() === fragment && current.view.get() === view
+    }
+
+    private fun enclosingRecyclerView(view: View): View? {
+        var parent = view.parent
+        while (parent is View) {
+            if (isRecyclerView(parent)) return parent
+            parent = parent.parent
+        }
+        return null
+    }
+
+    private fun isRecyclerView(view: View): Boolean {
+        var type: Class<*>? = view.javaClass
+        while (type != null) {
+            if (type.name == RECYCLER_VIEW_CLASS) return true
+            type = type.superclass
+        }
+        return false
+    }
+
+    private fun isComputingLayout(recyclerView: View): Boolean = runCatching {
+        recyclerView.javaClass.getMethod("isComputingLayout").invoke(recyclerView) == true
+    }.getOrDefault(false)
 
     private fun recommendationBvid(item: Any): String? {
         val goTo = property(item, "goTo", "getGoTo")?.toString()
@@ -286,4 +361,8 @@ object RecommendationFullVideoCardFilter {
         }
         return null
     }
+
+    private const val RECYCLER_VIEW_CLASS = "androidx.recyclerview.widget.RecyclerView"
+    private const val MAX_LAYOUT_RETRIES = 8
+    private const val LAYOUT_RETRY_DELAY_MS = 16L
 }
