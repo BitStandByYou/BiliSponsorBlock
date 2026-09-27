@@ -29,6 +29,18 @@ object ResolvedTargets {
     @Volatile
     var authorVideoCardHolderClasses: List<String>? = null
 
+    /** 动态列表适配器的模块列表字段、差量更新方法与动态分组 ID 访问方法。 */
+    @Volatile
+    var dynamicModuleListAdapterClass: String? = null
+    @Volatile
+    var dynamicModuleListField: String? = null
+    @Volatile
+    var dynamicModuleListUpdateMethodName: String? = null
+    @Volatile
+    var dynamicPostRootMethodName: String? = null
+    @Volatile
+    var dynamicPostIdMethodName: String? = null
+
     val effectiveSeekTrackClasses: List<String>
         get() = seekTrackClasses ?: HostTargets.SEEK_TRACK_CLASSES
 
@@ -40,6 +52,17 @@ object ResolvedTargets {
 
     val effectiveAuthorVideoCardHolderClasses: List<String>
         get() = authorVideoCardHolderClasses ?: HostTargets.AUTHOR_VIDEO_CARD_HOLDER_CLASSES
+
+    val effectiveDynamicModuleListAdapterClass: String
+        get() = dynamicModuleListAdapterClass ?: HostTargets.DYNAMIC_MODULE_LIST_ADAPTER_CLASS
+    val effectiveDynamicModuleListField: String
+        get() = dynamicModuleListField ?: HostTargets.DYNAMIC_MODULE_LIST_FIELD
+    val effectiveDynamicModuleListUpdateMethodName: String
+        get() = dynamicModuleListUpdateMethodName ?: HostTargets.DYNAMIC_MODULE_LIST_UPDATE_METHOD
+    val effectiveDynamicPostRootMethodName: String
+        get() = dynamicPostRootMethodName ?: HostTargets.DYNAMIC_POST_MODEL_ROOT_METHOD
+    val effectiveDynamicPostIdMethodName: String
+        get() = dynamicPostIdMethodName ?: HostTargets.DYNAMIC_POST_MODEL_ID_METHOD
 }
 
 /**
@@ -86,7 +109,11 @@ object DexKitResolver {
         val needMine = !candidatesAllPresent(classLoader, HostTargets.MINE_ADAPTER_CLASSES)
         val needRelatedAvCard = !relatedAvCardBindCandidatePresent(classLoader)
         val needAuthorVideoCard = !authorVideoCardBindCandidatePresent(classLoader)
-        if (!needSeek && !needMine && !needRelatedAvCard && !needAuthorVideoCard) {
+        val needDynamicListAdapter = !dynamicListAdapterCandidatePresent(classLoader)
+        val needDynamicPostMethods = !dynamicPostMethodsCandidatePresent(classLoader)
+        if (!needSeek && !needMine && !needRelatedAvCard && !needAuthorVideoCard &&
+            !needDynamicListAdapter && !needDynamicPostMethods
+        ) {
             module.info("混淆锚点候选名全部存在，跳过 DexKit 解析")
             return
         }
@@ -173,6 +200,79 @@ object DexKitResolver {
                         module.warn("DexKit 未能唯一定位 UP 主投稿视频卡片，沿用候选名：$found")
                     }
                 }
+                if (needDynamicListAdapter) {
+                    val adapterClasses = bridge.findClass {
+                        matcher {
+                            superClass(ADAPTER, StringMatchType.Equals, false)
+                            usingStrings("DynamicListAdapter")
+                            fields {
+                                add { type = "java.util.List" }
+                            }
+                            methods {
+                                add {
+                                    returnType = "void"
+                                    paramTypes = listOf("java.util.List")
+                                    usingStrings("adapter update called, old list size = ")
+                                }
+                            }
+                        }
+                    }.map { it.name }.distinct()
+                    if (adapterClasses.size == 1) {
+                        val adapterClass = adapterClasses.single()
+                        val itemFields = bridge.findField {
+                            matcher {
+                                declaredClass = adapterClass
+                                type = "java.util.List"
+                            }
+                        }.map { it.name }.distinct()
+                        val updateMethods = bridge.findMethod {
+                            matcher {
+                                declaredClass = adapterClass
+                                returnType = "void"
+                                paramCount = 1
+                                paramTypes = listOf("java.util.List")
+                                usingStrings("adapter update called, old list size = ")
+                            }
+                        }.map { it.name }.distinct()
+                        if (itemFields.size == 1 && updateMethods.size == 1) {
+                            ResolvedTargets.dynamicModuleListAdapterClass = adapterClass
+                            ResolvedTargets.dynamicModuleListField = itemFields.single()
+                            ResolvedTargets.dynamicModuleListUpdateMethodName = updateMethods.single()
+                            module.info("DexKit 定位动态模块列表适配器：$adapterClass ${itemFields.single()}/${updateMethods.single()}")
+                        } else {
+                            module.warn("DexKit 未能唯一定位动态模块列表适配器字段/更新方法：$itemFields / $updateMethods")
+                        }
+                    } else {
+                        module.warn("DexKit 未能唯一定位动态模块列表适配器：$adapterClasses")
+                    }
+                }
+                if (needDynamicPostMethods) {
+                    val rootMethods = bridge.findMethod {
+                        matcher {
+                            declaredClass = HostTargets.DYNAMIC_POST_MODEL_BASE_CLASS
+                            returnType = HostTargets.DYNAMIC_POST_MODEL_ROOT_CLASS
+                            paramCount = 0
+                        }
+                    }.map { it.name }.distinct()
+                    val idMethods = bridge.findMethod {
+                        matcher {
+                            declaredClass = HostTargets.DYNAMIC_POST_MODEL_ROOT_CLASS
+                            returnType = "long"
+                            paramCount = 0
+                        }
+                    }.map { it.name }.distinct()
+                    if (rootMethods.size == 1) {
+                        ResolvedTargets.dynamicPostRootMethodName = rootMethods.single()
+                    }
+                    if (idMethods.size == 1) {
+                        ResolvedTargets.dynamicPostIdMethodName = idMethods.single()
+                    }
+                    if (rootMethods.size != 1 || idMethods.size != 1) {
+                        module.warn("DexKit 未能唯一定位动态分组访问方法：root=$rootMethods id=$idMethods")
+                    } else {
+                        module.info("DexKit 定位动态分组访问方法：${rootMethods.single()}/${idMethods.single()}")
+                    }
+                }
             }
         }.onFailure {
             module.warn("DexKit 解析失败，回退候选名：${it.javaClass.simpleName}: ${it.message}")
@@ -207,4 +307,34 @@ object DexKitResolver {
                     method.parameterTypes[1] == Int::class.javaPrimitiveType
             }
         }
+
+    private fun dynamicListAdapterCandidatePresent(classLoader: ClassLoader): Boolean {
+        val clazz = runCatching {
+            Class.forName(HostTargets.DYNAMIC_MODULE_LIST_ADAPTER_CLASS, false, classLoader)
+        }.getOrNull() ?: return false
+        return clazz.declaredFields.any { it.name == HostTargets.DYNAMIC_MODULE_LIST_FIELD &&
+            List::class.java.isAssignableFrom(it.type)
+        } && clazz.declaredMethods.any { method ->
+            method.name == HostTargets.DYNAMIC_MODULE_LIST_UPDATE_METHOD &&
+                method.returnType == Void.TYPE && method.parameterTypes.contentEquals(arrayOf(List::class.java))
+        }
+    }
+
+    private fun dynamicPostMethodsCandidatePresent(classLoader: ClassLoader): Boolean {
+        val base = runCatching {
+            Class.forName(HostTargets.DYNAMIC_POST_MODEL_BASE_CLASS, false, classLoader)
+        }.getOrNull() ?: return false
+        val root = runCatching {
+            Class.forName(HostTargets.DYNAMIC_POST_MODEL_ROOT_CLASS, false, classLoader)
+        }.getOrNull() ?: return false
+        val rootMethodPresent = base.declaredMethods.any { method ->
+            method.name == HostTargets.DYNAMIC_POST_MODEL_ROOT_METHOD &&
+                method.returnType == root && method.parameterTypes.isEmpty()
+        }
+        val idMethodPresent = root.declaredMethods.any { method ->
+            method.name == HostTargets.DYNAMIC_POST_MODEL_ID_METHOD &&
+                method.returnType == java.lang.Long.TYPE && method.parameterTypes.isEmpty()
+        }
+        return rootMethodPresent && idMethodPresent
+    }
 }

@@ -122,6 +122,18 @@ object HostTargets {
     const val AUTHOR_SPACE_ACTIVITY_CLASS = "com.bilibili.app.authorspace.ui.AuthorSpaceActivity"
     const val AUTHOR_SPACE_VIDEO_MODEL_CLASS = "com.bilibili.app.authorspace.api.BiliSpaceVideo"
 
+    /** 动态视频卡片基类及绑定参数（9.12.0）：playable.z#y0(tS.U2, playable.e, service.Z, List)。 */
+    const val DYNAMIC_VIDEO_CARD_HOLDER_BASE_CLASS = "com.bilibili.bplus.followinglist.module.item.playable.z"
+    const val DYNAMIC_VIDEO_CARD_BIND_METHOD = "y0"
+    const val DYNAMIC_VIDEO_MODEL_BASE_CLASS = "tS.U2"
+    const val DYNAMIC_POST_MODEL_BASE_CLASS = "tS.G"
+    const val DYNAMIC_POST_MODEL_ROOT_CLASS = "tS.H"
+    const val DYNAMIC_POST_MODEL_ROOT_METHOD = "M"
+    const val DYNAMIC_POST_MODEL_ID_METHOD = "a"
+    const val DYNAMIC_MODULE_LIST_ADAPTER_CLASS = "dS.a"
+    const val DYNAMIC_MODULE_LIST_FIELD = "d"
+    const val DYNAMIC_MODULE_LIST_UPDATE_METHOD = "m0"
+
     /** 新版 UP 主空间 H5 页面与归档游标接口。 */
     const val LOCAL_AUTHOR_SPACE_ACTIVITY_CLASS = "com.bilibili.app.authorspace.local.LocalAuthorSpaceActivity"
     const val HILO_CLIENT_CLASS = "com.bilibili.common.hilowebview.client.HiloClient"

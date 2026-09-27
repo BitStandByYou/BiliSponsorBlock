@@ -307,8 +307,8 @@ object SettingsScreenBuilder {
                         activity,
                         prefs,
                         SettingsKeys.HIDE_FULL_VIDEO_LABEL_CARDS,
-                        "隐藏整段推广视频",
-                        "首页推荐隐藏整段推广卡片；播放页更多视频与 UP 主投稿仅隐藏带整段广告标签的视频",
+                        "隐藏恰饭推广视频",
+                        "在首页推荐、播放页更多视频和 UP 主投稿中隐藏带有整段推广标签的视频；在关注流/动态中移除对应视频动态",
                         true,
                     ),
                 )
