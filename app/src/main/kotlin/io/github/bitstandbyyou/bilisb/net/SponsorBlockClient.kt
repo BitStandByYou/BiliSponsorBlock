@@ -347,13 +347,15 @@ class SponsorBlockClient(
 
     private fun parseSegment(json: JSONObject): SponsorSegment? {
         val segmentArray = json.optJSONArray("segment") ?: return null
-        if (segmentArray.length() < 2) {
-            return null
-        }
-
         // org.json 的 optString 会把 JSON null 变成字面量 "null",所以统一走 optStringOrNull。
         val category = optStringOrNull(json, "category")?.takeIf { it.isNotBlank() } ?: DEFAULT_CATEGORY
         val actionType = optStringOrNull(json, "actionType")?.takeIf { it.isNotBlank() } ?: DEFAULT_ACTION_TYPE
+        // `full` 是整段视频标签，不是普通时间区间；协议规定 startTime=endTime=0。
+        // 先识别它，避免被普通片段的零长度校验丢弃。它不进入跳过/绘制链路。
+        val isFullVideoLabel = actionType == "full"
+        if (segmentArray.length() < if (isFullVideoLabel) 1 else 2) {
+            return null
+        }
         // UUID 是去重 key(跳过记录/提交去重都依赖它),缺失或为 null 时丢弃该片段。
         val uuid = optStringOrNull(json, "UUID")?.takeIf { it.isNotBlank() }
             ?: optStringOrNull(json, "uuid")?.takeIf { it.isNotBlank() }
@@ -367,7 +369,11 @@ class SponsorBlockClient(
             0L
         }
 
-        val range = sanitizeSegmentRange(segmentArray, videoDurationMs) ?: return null
+        val range = if (isFullVideoLabel) {
+            sanitizeFullVideoMarker(segmentArray) ?: return null
+        } else {
+            sanitizeSegmentRange(segmentArray, videoDurationMs) ?: return null
+        }
 
         return SponsorSegment(
             category = category,
@@ -379,6 +385,16 @@ class SponsorBlockClient(
             votes = json.optLong("votes", 0L),
             description = optStringOrNull(json, "description") ?: "",
         )
+    }
+
+    /** `actionType=full` 的时间字段按协议为 0/0，是类型标记而非可跳过区间。 */
+    private fun sanitizeFullVideoMarker(segmentArray: JSONArray): LongArray? {
+        if (segmentArray.length() !in 1..2) return null
+        for (index in 0 until segmentArray.length()) {
+            val value = segmentArray.optDouble(index, Double.NaN)
+            if (!value.isFinite() || value != 0.0) return null
+        }
+        return longArrayOf(0L, 0L)
     }
 
     /**

@@ -88,6 +88,35 @@ class SponsorBlockClientTest {
     }
 
     @Test
+    fun parsesFullVideoLabelsWhenExplicitlyRequestedWithoutEnablingThemForSkipping() {
+        val fullClient = SponsorBlockClient(
+            config = SponsorBlockConfig(
+                enabledCategories = setOf("sponsor", "exclusive_access", "selfpromo"),
+                enabledActionTypes = setOf("full"),
+            ),
+            logger = {},
+        )
+        try {
+            val raw = """
+                [{"videoID":"BV1","segments":[
+                  {"segment":[0.0,0.0],"category":"sponsor","actionType":"full","UUID":"full-sponsor"},
+                  {"segment":[0.0],"category":"exclusive_access","actionType":"full","UUID":"full-brand"},
+                  {"segment":[10.0,20.0],"category":"sponsor","actionType":"skip","UUID":"ordinary-sponsor"},
+                  {"segment":[0.0,0.0],"category":"intro","actionType":"full","UUID":"unsupported-full"}
+                ]}]
+            """.trimIndent()
+
+            val segments = fullClient.parseSegmentsForVideo("BV1", raw)
+
+            assertEquals(listOf("full-sponsor", "full-brand"), segments.map { it.uuid })
+            assertTrue(segments.all { it.actionType == "full" })
+            assertTrue(segments.all { it.startMs == 0L && it.endMs == 0L })
+        } finally {
+            fullClient.close()
+        }
+    }
+
+    @Test
     fun dropsSegmentsFailingSanityChecks() {
         val raw = """
             [

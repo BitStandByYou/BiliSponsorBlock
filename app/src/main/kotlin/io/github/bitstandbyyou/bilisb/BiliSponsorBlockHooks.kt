@@ -74,6 +74,9 @@ object BiliSponsorBlockHooks {
         installSafely(module, "seekTrack") { hookProgressDrawable(module, cl) }
         installSafely(module, "progressCallback") { hookProgressText(module, cl) }
         installSafely(module, "mineMenu") { io.github.bitstandbyyou.bilisb.hook.MineMenuInjector.install(module, cl) }
+        installSafely(module, "fullVideoLabelGate") {
+            io.github.bitstandbyyou.bilisb.hook.FullVideoLabelGate.install(module)
+        }
 
         module.info(HookProbe.summary())
     }

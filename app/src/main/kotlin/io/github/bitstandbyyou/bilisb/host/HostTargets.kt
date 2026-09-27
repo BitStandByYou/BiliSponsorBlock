@@ -99,6 +99,11 @@ object HostTargets {
 
     // ---------------------------------------------------------------- 视频信息（aid/cid）
 
+    /** 三类信息流进入视频页共用的播放路由（9.12.0 真机验证）。 */
+    const val VIDEO_DETAIL_ROUTE_SCHEME = "bilibili"
+    const val VIDEO_DETAIL_ROUTE_HOST = "united_video"
+    const val VIDEO_DETAIL_ACTIVITY = "com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity"
+
     /** director 服务实现类（类名未被混淆）。 */
     val DIRECTOR_SERVICE_CLASSES = listOf(
         "tv.danmaku.biliplayerimpl.videodirector.PlayDirectorServiceV3",
