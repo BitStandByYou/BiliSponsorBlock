@@ -34,6 +34,7 @@ object SettingsCodec {
             showTimeDeduction = prefs.getBoolean(SettingsKeys.SHOW_TIME_DEDUCTION, true),
             showSkipStats = prefs.getBoolean(SettingsKeys.SHOW_SKIP_STATS, true),
             showSubmitButton = prefs.getBoolean(SettingsKeys.SHOW_SUBMIT_BUTTON, true),
+            hideFullVideoLabelCards = prefs.getBoolean(SettingsKeys.HIDE_FULL_VIDEO_LABEL_CARDS, true),
             categoryColors = SettingsKeys.CATEGORY_COLOR_DEFAULTS.mapValues { (category, def) ->
                 parseColor(prefs.getString(SettingsKeys.colorKey(category), def), def)
             },
@@ -67,6 +68,7 @@ object SettingsCodec {
             put(SettingsKeys.SHOW_TIME_DEDUCTION, snapshot.showTimeDeduction)
             put(SettingsKeys.SHOW_SKIP_STATS, snapshot.showSkipStats)
             put(SettingsKeys.SHOW_SUBMIT_BUTTON, snapshot.showSubmitButton)
+            put(SettingsKeys.HIDE_FULL_VIDEO_LABEL_CARDS, snapshot.hideFullVideoLabelCards)
             SettingsKeys.CATEGORY_COLOR_DEFAULTS.forEach { (category, def) ->
                 put(SettingsKeys.colorKey(category), snapshot.categoryColors[category]?.let(::toHex) ?: def)
             }
@@ -115,6 +117,7 @@ object SettingsCodec {
             showTimeDeduction = bool(SettingsKeys.SHOW_TIME_DEDUCTION, true),
             showSkipStats = bool(SettingsKeys.SHOW_SKIP_STATS, true),
             showSubmitButton = bool(SettingsKeys.SHOW_SUBMIT_BUTTON, true),
+            hideFullVideoLabelCards = bool(SettingsKeys.HIDE_FULL_VIDEO_LABEL_CARDS, true),
             categoryColors = SettingsKeys.CATEGORY_COLOR_DEFAULTS.mapValues { (category, def) ->
                 parseColor(str(SettingsKeys.colorKey(category), def), def)
             },
@@ -173,6 +176,7 @@ object SettingsCodec {
         showTimeDeduction = true,
         showSkipStats = true,
         showSubmitButton = true,
+        hideFullVideoLabelCards = true,
         categoryColors = SettingsKeys.CATEGORY_COLOR_DEFAULTS.mapValues { (_, hex) -> parseColor(hex, "#808080") },
     )
 

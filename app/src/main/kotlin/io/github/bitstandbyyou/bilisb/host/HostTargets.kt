@@ -104,6 +104,11 @@ object HostTargets {
     const val VIDEO_DETAIL_ROUTE_HOST = "united_video"
     const val VIDEO_DETAIL_ACTIVITY = "com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity"
 
+    /** 9.12.0 首页 Pegasus 推荐流 Adapter 与模型绑定方法。 */
+    const val RECOMMENDATION_CARD_ADAPTER_CLASS = "com.bilibili.pegasus.vm.o"
+    const val RECOMMENDATION_CARD_BIND_METHOD = "onBindViewHolder"
+    const val RECOMMENDATION_FEED_FRAGMENT = "com.bilibili.pegasus.PegasusFragment"
+
     /** director 服务实现类（类名未被混淆）。 */
     val DIRECTOR_SERVICE_CLASSES = listOf(
         "tv.danmaku.biliplayerimpl.videodirector.PlayDirectorServiceV3",

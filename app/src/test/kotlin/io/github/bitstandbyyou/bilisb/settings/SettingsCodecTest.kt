@@ -40,6 +40,7 @@ class SettingsCodecTest {
                 SettingsKeys.SHOW_SEEKBAR_MARKER to false,
                 SettingsKeys.SHOW_TIME_DEDUCTION to false,
                 SettingsKeys.SHOW_SUBMIT_BUTTON to false,
+                SettingsKeys.HIDE_FULL_VIDEO_LABEL_CARDS to false,
                 SettingsKeys.colorKey("sponsor") to "#112233",
             )
         )
@@ -62,6 +63,7 @@ class SettingsCodecTest {
         assertFalse(snapshot.showSeekbarMarker)
         assertFalse(snapshot.showTimeDeduction)
         assertFalse(snapshot.showSubmitButton)
+        assertFalse(snapshot.hideFullVideoLabelCards)
     }
 
     @Test
@@ -76,6 +78,7 @@ class SettingsCodecTest {
             defaultSubmitCategory = "intro",
             enabledCategories = setOf("intro", "outro"),
             showTimeDeduction = false,
+            hideFullVideoLabelCards = false,
             categoryColors = SettingsSnapshot.DEFAULT.categoryColors + ("sponsor" to 0xFF123456.toInt()),
         )
 
@@ -223,6 +226,7 @@ class SettingsCodecTest {
         showTimeDeduction = false,
         showSkipStats = false,
         showSubmitButton = false,
+        hideFullVideoLabelCards = false,
         // 颜色必须是 opaque：#RRGGBB 是存储契约，alpha 会被 codec 裁掉
         categoryColors = SettingsKeys.CATEGORY_COLOR_DEFAULTS.mapValues { (category, _) ->
             if (category == "sponsor") 0xFF123456.toInt() else 0xFF654321.toInt()

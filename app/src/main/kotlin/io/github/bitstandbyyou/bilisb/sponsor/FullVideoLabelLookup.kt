@@ -5,9 +5,11 @@ import android.os.Looper
 import io.github.bitstandbyyou.bilisb.model.SponsorBlockConfig
 import io.github.bitstandbyyou.bilisb.model.SponsorBlockQuery
 import io.github.bitstandbyyou.bilisb.net.SponsorBlockClient
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * 播放前整段标签查询。按服务地址 + bvid 缓存正/负结果，并合并同一视频的并发查询。
@@ -15,15 +17,8 @@ import java.util.concurrent.Executors
  */
 internal class FullVideoLabelLookup(
     private val serverAddress: String,
-    private val client: SponsorBlockClient = SponsorBlockClient(
-        config = SponsorBlockConfig(
-            serverAddress = serverAddress,
-            enabledCategories = FULL_VIDEO_CATEGORIES,
-            enabledActionTypes = setOf(FullVideoLabel.ACTION_TYPE),
-        ),
-    ),
-    private val executor: ExecutorService = Executors.newSingleThreadExecutor { task ->
-        Thread(task, "BiliSB-full-video-label").apply { isDaemon = true }
+    private val executor: ExecutorService = Executors.newFixedThreadPool(MAX_PARALLEL_FETCHES) { task ->
+        Thread(task, "BiliSB-full-video-label-${workerIds.incrementAndGet()}").apply { isDaemon = true }
     },
     private val mainHandler: Handler = Handler(Looper.getMainLooper()),
     private val nowMs: () -> Long = { android.os.SystemClock.elapsedRealtime() },
@@ -38,6 +33,8 @@ internal class FullVideoLabelLookup(
     private val lock = Any()
     private val cache = ConcurrentHashMap<String, Cached>()
     private val callbacksByBvid = HashMap<String, MutableList<(Result) -> Unit>>()
+    private val clients = ConcurrentLinkedQueue<SponsorBlockClient>()
+    private val clientByThread = ThreadLocal<SponsorBlockClient>()
 
     fun lookup(bvid: String, callback: (Result) -> Unit) {
         if (bvid.isBlank()) {
@@ -70,7 +67,7 @@ internal class FullVideoLabelLookup(
 
         executor.execute {
             val result = runCatching {
-                val fetched = client.fetchSkipSegments(SponsorBlockQuery(bvid, 0L))
+                val fetched = clientForCurrentWorker().fetchSkipSegments(SponsorBlockQuery(bvid, 0L))
                 when {
                     fetched.parseFailed -> Result.Failed(fetched.statusCode)
                     fetched.statusCode == 404 -> Result.Checked(null)
@@ -106,17 +103,38 @@ internal class FullVideoLabelLookup(
 
     fun close() {
         executor.shutdownNow()
-        client.close()
+        clients.forEach(SponsorBlockClient::close)
+        clients.clear()
+        clientByThread.remove()
         synchronized(lock) {
             callbacksByBvid.clear()
             cache.clear()
         }
     }
 
+    /** 每个工作线程持有自己的客户端，绕过 SponsorBlockClient 单实例串行队列的排队延迟。 */
+    private fun clientForCurrentWorker(): SponsorBlockClient = clientByThread.get() ?: SponsorBlockClient(
+        config = SponsorBlockConfig(
+            serverAddress = serverAddress,
+            enabledCategories = FULL_VIDEO_CATEGORIES,
+            enabledActionTypes = setOf(FullVideoLabel.ACTION_TYPE),
+        ),
+    ).also { client ->
+        clients += client
+        clientByThread.set(client)
+    }
+
     companion object {
+        private val sharedByServer = ConcurrentHashMap<String, FullVideoLabelLookup>()
+
+        fun shared(serverAddress: String): FullVideoLabelLookup =
+            sharedByServer.computeIfAbsent(serverAddress) { FullVideoLabelLookup(it) }
+
         private const val CACHE_TTL_MS = 60L * 60_000L
         private const val MAX_CACHE_ENTRIES = 128
         private const val TARGET_CACHE_ENTRIES = 96
+        private const val MAX_PARALLEL_FETCHES = 3
+        private val workerIds = AtomicInteger()
         private val FULL_VIDEO_CATEGORIES = setOf(
             FullVideoLabel.CATEGORY_SPONSOR,
             FullVideoLabel.CATEGORY_EXCLUSIVE_ACCESS,

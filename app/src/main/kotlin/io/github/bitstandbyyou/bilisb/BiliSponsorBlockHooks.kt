@@ -77,6 +77,9 @@ object BiliSponsorBlockHooks {
         installSafely(module, "fullVideoLabelGate") {
             io.github.bitstandbyyou.bilisb.hook.FullVideoLabelGate.install(module)
         }
+        installSafely(module, "recommendationFullVideoCards") {
+            io.github.bitstandbyyou.bilisb.hook.RecommendationFullVideoCardFilter.install(module, cl)
+        }
 
         module.info(HookProbe.summary())
     }

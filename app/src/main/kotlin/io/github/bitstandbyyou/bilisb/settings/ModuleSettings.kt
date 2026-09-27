@@ -142,6 +142,8 @@ data class SettingsSnapshot(
     /** 是否记录/展示跳过统计（关闭后不再累计新的跳过次数与节省时长）。 */
     val showSkipStats: Boolean,
     val showSubmitButton: Boolean,
+    /** 首页推荐信息流中隐藏有 SponsorBlock 整段推广标签的视频卡片。 */
+    val hideFullVideoLabelCards: Boolean,
     /** 分类标记颜色:category 字符串 → ARGB int。缺省由 CATEGORY_COLOR_DEFAULTS 填充。 */
     val categoryColors: Map<String, Int>,
 ) {

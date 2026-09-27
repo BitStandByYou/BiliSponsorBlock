@@ -6,6 +6,7 @@ import android.content.Intent
 import io.github.bitstandbyyou.bilisb.host.HostTargets
 import io.github.bitstandbyyou.bilisb.host.HookProbe
 import io.github.bitstandbyyou.bilisb.settings.ModuleSettings
+import io.github.bitstandbyyou.bilisb.settings.SettingsKeys
 import io.github.bitstandbyyou.bilisb.settings.SettingsSnapshot
 import io.github.bitstandbyyou.bilisb.sponsor.FullVideoLabel
 import io.github.bitstandbyyou.bilisb.sponsor.FullVideoLabelLookup
@@ -17,7 +18,6 @@ import io.github.libxposed.api.XposedModule
 import java.lang.reflect.Method
 import java.util.Collections
 import java.util.WeakHashMap
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * 所有已验证视频来源最终都路由到 `bilibili://united_video/{aid}`。
@@ -31,8 +31,6 @@ object FullVideoLabelGate {
     private val replayingIntents = Collections.synchronizedSet(
         Collections.newSetFromMap(WeakHashMap<Intent, Boolean>()),
     )
-    private val lookupByServer = ConcurrentHashMap<String, FullVideoLabelLookup>()
-
     fun install(module: XposedModule) {
         val methods = Activity::class.java.declaredMethods.filter { method ->
             method.name in setOf("startActivity", "startActivityForResult") &&
@@ -62,8 +60,13 @@ object FullVideoLabelGate {
                         .getOrElse {
                             module.warn("pre-play label settings read failed: ${it.message}")
                             SettingsSnapshot.DEFAULT
-                        }
+                    }
                     if (!settings.enabled) return@intercept chain.proceed()
+                    val hideRecommendationCard = activity.getSharedPreferences(
+                        SettingsKeys.PREFS_NAME,
+                        android.content.Context.MODE_PRIVATE,
+                    ).getBoolean(SettingsKeys.HIDE_FULL_VIDEO_LABEL_CARDS, settings.hideFullVideoLabelCards) &&
+                        isRecommendationFeedRoute(intent)
 
                     pendingIntents.add(intent)
                     HookProbe.first(module, "fullVideoLabelGateCalled", 5) {
@@ -73,11 +76,18 @@ object FullVideoLabelGate {
                     val chainArgs = chain.getArgs()
                     val savedArgs = Array<Any?>(chainArgs.size) { index -> chainArgs[index] }
                     val savedMethod = method
-                    val lookup = lookupByServer.computeIfAbsent(settings.serverAddress) {
-                        FullVideoLabelLookup(it)
+                    val lookup = FullVideoLabelLookup.shared(settings.serverAddress)
+                    val navigation = PendingNavigation(
+                        activity,
+                        intent,
+                        savedMethod,
+                        savedArgs,
+                        module,
+                        hideRecommendationCard,
+                    )
+                    if (!hideRecommendationCard) {
+                        navigation.showLoading()
                     }
-                    val navigation = PendingNavigation(activity, intent, savedMethod, savedArgs, module)
-                    navigation.showLoading()
                     lookup.lookup(bvid) { result -> navigation.onLookup(result) }
                     null
                 }
@@ -112,6 +122,7 @@ object FullVideoLabelGate {
         private val method: Method,
         private val args: Array<Any?>,
         private val module: XposedModule,
+        private val hideRecommendationCard: Boolean,
     ) {
         private var dialog: AlertDialog? = null
         private var finished = false
@@ -142,6 +153,9 @@ object FullVideoLabelGate {
                     if (label == null) {
                         module.info("pre-play full-video label check: no label")
                         replay()
+                    } else if (hideRecommendationCard && shouldHideRecommendationCardNow()) {
+                        module.info("tagged recommendation card click canceled; feed filter will hide it")
+                        finish()
                     } else {
                         showLabel(label)
                     }
@@ -177,7 +191,7 @@ object FullVideoLabelGate {
                     showLoading()
                     val settings = runCatching { ModuleSettings.load(module, activity) }
                         .getOrDefault(SettingsSnapshot.DEFAULT)
-                    lookupByServer.computeIfAbsent(settings.serverAddress) { FullVideoLabelLookup(it) }
+                    FullVideoLabelLookup.shared(settings.serverAddress)
                         .lookup(videoBvid(intent).orEmpty()) { onLookup(it) }
                 }
                 .setNegativeButton("返回列表") { _, _ -> finish() }
@@ -244,6 +258,12 @@ object FullVideoLabelGate {
 
         private fun isActivityUsable(): Boolean = !activity.isFinishing && !activity.isDestroyed
 
+        private fun shouldHideRecommendationCardNow(): Boolean {
+            val prefs = activity.getSharedPreferences(SettingsKeys.PREFS_NAME, android.content.Context.MODE_PRIVATE)
+            return prefs.getBoolean(SettingsKeys.ENABLED, true) &&
+                prefs.getBoolean(SettingsKeys.HIDE_FULL_VIDEO_LABEL_CARDS, true)
+        }
+
         private fun titleFromIntent(intent: Intent): String? {
             val candidate = sequenceOf("title", "av_title", "archive_title")
                 .mapNotNull { key -> extraString(intent, key) }
@@ -262,4 +282,7 @@ object FullVideoLabelGate {
         return runCatching { extras.getLong("aid").takeIf { it > 0L }?.toString() }.getOrNull()
             ?: runCatching { extras.getInt("aid").takeIf { it > 0 }?.toString() }.getOrNull()
     }
+
+    private fun isRecommendationFeedRoute(intent: Intent): Boolean =
+        intent.data?.getQueryParameter("from_spmid") == "tm.recommend.0.0"
 }

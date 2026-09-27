@@ -303,6 +303,14 @@ object SettingsScreenBuilder {
                     createCheckBox(activity, prefs, SettingsKeys.SHOW_SEEKBAR_MARKER, "进度条标记", "标记片段位置", true),
                     createCheckBox(activity, prefs, SettingsKeys.SHOW_TIME_DEDUCTION, "时间扣减", "总时长减去跳过时长", true),
                     createCheckBox(activity, prefs, SettingsKeys.SHOW_SKIP_STATS, "跳过次数统计", "累计跳过次数与节省时长", true),
+                    createCheckBox(
+                        activity,
+                        prefs,
+                        SettingsKeys.HIDE_FULL_VIDEO_LABEL_CARDS,
+                        "隐藏整段推广视频",
+                        "在首页推荐信息流中隐藏带有 SponsorBlock 整段视频标签的卡片",
+                        true,
+                    ),
                 )
                 rows.forEachIndexed { index, row ->
                     if (index > 0) addView(biliDividerInner(activity))
