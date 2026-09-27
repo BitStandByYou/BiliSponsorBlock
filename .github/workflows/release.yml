@@ -57,7 +57,7 @@ jobs:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
           if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
-            echo '缺少发布签名 Secrets，请参考 docs/GitHub发布.md。'
+            echo '缺少发布签名 Secrets，请参考 .agents/skills/github-release/SKILL.md。'
             exit 1
           fi
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_FILE"
