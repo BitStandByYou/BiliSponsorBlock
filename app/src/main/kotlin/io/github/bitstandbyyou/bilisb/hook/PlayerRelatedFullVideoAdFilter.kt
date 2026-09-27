@@ -30,6 +30,7 @@ object PlayerRelatedFullVideoAdFilter {
     private val lock = Any()
     private val boundCards = WeakHashMap<View, BoundCard>()
     private val hiddenCards = WeakHashMap<View, Boolean>()
+    private val originalCardHeights = WeakHashMap<View, Int>()
     private val prefsListeners = WeakHashMap<SharedPreferences, SharedPreferences.OnSharedPreferenceChangeListener>()
 
     fun install(module: XposedModule, classLoader: ClassLoader) {
@@ -70,9 +71,8 @@ object PlayerRelatedFullVideoAdFilter {
                     val root = runCatching {
                         binding.javaClass.getMethod("getRoot").invoke(binding) as? View
                     }.getOrNull() ?: return@runCatching
-                    // holder 复用时先清除本模块留下的 GONE 状态。
-                    root.visibility = View.VISIBLE
-                    synchronized(lock) { hiddenCards.remove(root) }
+                    // holder 复用时恢复本模块隐藏的卡片尺寸，避免 RecyclerView 留下空白行。
+                    restoreCard(root)
 
                     val card = relatedVideoCard(component) ?: run {
                         synchronized(lock) { boundCards.remove(root) }
@@ -133,8 +133,7 @@ object PlayerRelatedFullVideoAdFilter {
                                     view.context.getSharedPreferences(SettingsKeys.PREFS_NAME, Context.MODE_PRIVATE),
                                 )
                             ) {
-                                view.visibility = View.GONE
-                                synchronized(lock) { hiddenCards[view] = true }
+                                hideCard(view)
                                 HookProbe.first(module, "playerRelatedFullVideoAdHidden", 12) {
                                     "bvid=${bound.bvid}"
                                 }
@@ -161,8 +160,7 @@ object PlayerRelatedFullVideoAdFilter {
                 cards.forEach { (view, bound) ->
                     view.post {
                         if (!shouldHide) {
-                            val wasHidden = synchronized(lock) { hiddenCards.remove(view) != null }
-                            if (wasHidden) view.visibility = View.VISIBLE
+                            restoreCard(view)
                         } else {
                             checkCard(view, bound, changed, module)
                         }
@@ -171,6 +169,50 @@ object PlayerRelatedFullVideoAdFilter {
             }
             prefsListeners[prefs] = listener
             prefs.registerOnSharedPreferenceChangeListener(listener)
+        }
+    }
+
+    private fun hideCard(view: View) {
+        synchronized(lock) {
+            if (hiddenCards.put(view, true) == null) {
+                view.layoutParams?.let { originalCardHeights[view] = it.height }
+            }
+        }
+        // RecyclerView 仍保留已绑定 child 的测量尺寸；单设 GONE 会留下原卡片高度。
+        view.layoutParams?.let { params ->
+            if (params.height != 0) {
+                params.height = 0
+                view.layoutParams = params
+            }
+        }
+        view.visibility = View.GONE
+        requestListLayout(view)
+    }
+
+    private fun restoreCard(view: View) {
+        val wasHidden = synchronized(lock) { hiddenCards.remove(view) != null }
+        if (!wasHidden) return
+
+        val originalHeight = synchronized(lock) { originalCardHeights.remove(view) }
+        if (originalHeight != null) {
+            view.layoutParams?.let { params ->
+                if (params.height != originalHeight) {
+                    params.height = originalHeight
+                    view.layoutParams = params
+                }
+            }
+        }
+        view.visibility = View.VISIBLE
+        requestListLayout(view)
+    }
+
+    private fun requestListLayout(view: View) {
+        view.requestLayout()
+        var parent = view.parent
+        while (parent != null) {
+            parent.requestLayout()
+            if (parent.javaClass.name == "androidx.recyclerview.widget.RecyclerView") return
+            parent = (parent as? View)?.parent
         }
     }
 
