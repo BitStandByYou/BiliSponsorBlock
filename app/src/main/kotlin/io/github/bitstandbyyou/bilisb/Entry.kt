@@ -9,7 +9,7 @@ import io.github.bitstandbyyou.bilisb.util.info
 /**
  * 模块入口。
  *
- * 目标宿主：哔哩哔哩国内版 9.12.0（见 [HostTargets.HOST_PACKAGE]）。
+ * 目标宿主：哔哩哔哩国内版 9.12.0 / 9.14.0（见 [HostTargets.HOST_PACKAGE]）。
  * 只在宿主**主进程**挂 Hook；`:web` / `:download` / `:pushservice` / `:ijkservice` 等子进程直接跳过
  * （子进程里没有播放器 UI，挂上去只会增加崩溃面）。
  */

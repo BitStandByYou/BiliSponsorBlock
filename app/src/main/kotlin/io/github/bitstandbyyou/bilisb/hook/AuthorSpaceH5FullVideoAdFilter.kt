@@ -55,11 +55,17 @@ object AuthorSpaceH5FullVideoAdFilter {
                 runCatching {
                     val activity = chain.getThisObject() as? Activity ?: return@runCatching
                     val hiloWebView = field(activity, "a1") ?: return@runCatching
-                    val webView = field(hiloWebView, "a") as? WebView ?: return@runCatching
+                    val (webViewField, webView) = HostTargets.HILO_WEBVIEW_INNER_VIEW_FIELDS
+                        .firstNotNullOfOrNull { name ->
+                            (field(hiloWebView, name) as? WebView)?.let { name to it }
+                        } ?: return@runCatching
                     synchronized(lock) { activeWebViews[webView] = WeakReference(activity) }
                     val prefs = activity.getSharedPreferences(SettingsKeys.PREFS_NAME, Context.MODE_PRIVATE)
                     registerPreferenceListener(prefs, module)
                     HookProbe.first(module, "authorSpaceH5Activity", 3) { activity.javaClass.name }
+                    HookProbe.first(module, "authorSpaceH5WebView", 3) {
+                        "field=$webViewField view=${webView.javaClass.name}"
+                    }
                 }.onFailure {
                     module.warn("UP 主 H5 过滤初始化失败：${it.javaClass.simpleName}: ${it.message}")
                 }

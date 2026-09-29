@@ -6,7 +6,6 @@ import android.os.Handler
 import android.os.Looper
 import android.view.View
 import io.github.bitstandbyyou.bilisb.host.HookProbe
-import io.github.bitstandbyyou.bilisb.host.HookResolve
 import io.github.bitstandbyyou.bilisb.host.HostTargets
 import io.github.bitstandbyyou.bilisb.host.ResolvedTargets
 import io.github.bitstandbyyou.bilisb.settings.SettingsKeys
@@ -46,29 +45,7 @@ object DynamicFullVideoAdFilter {
     private val mainHandler = Handler(Looper.getMainLooper())
 
     fun install(module: XposedModule, classLoader: ClassLoader) {
-        val holderClass = runCatching {
-            Class.forName(HostTargets.DYNAMIC_VIDEO_CARD_HOLDER_BASE_CLASS, false, classLoader)
-        }.getOrNull()
-        if (holderClass == null) {
-            HookProbe.miss(module, "dynamicFullVideoAds", "dynamic video holder base class not found")
-            return
-        }
-
-        val bindMethod = HookResolve.declaredMethodByShape(
-            holderClass,
-            listOf(HostTargets.DYNAMIC_VIDEO_CARD_BIND_METHOD),
-            arity = 4,
-        ) { typeName ->
-            typeName == HostTargets.DYNAMIC_VIDEO_MODEL_BASE_CLASS ||
-                typeName == "com.bilibili.bplus.followinglist.module.item.playable.e" ||
-                typeName == "com.bilibili.bplus.followinglist.service.Z" ||
-                typeName == "java.util.List"
-        }?.takeIf { method ->
-            method.parameterTypes[0].name == HostTargets.DYNAMIC_VIDEO_MODEL_BASE_CLASS &&
-                method.parameterTypes[1].name == "com.bilibili.bplus.followinglist.module.item.playable.e" &&
-                method.parameterTypes[2].name == "com.bilibili.bplus.followinglist.service.Z" &&
-                List::class.java.isAssignableFrom(method.parameterTypes[3])
-        }
+        val bindMethod = findVideoBindMethod(classLoader)
         if (bindMethod == null) {
             HookProbe.miss(module, "dynamicFullVideoAds", "dynamic archive bind signature not found")
             return
@@ -82,9 +59,10 @@ object DynamicFullVideoAdFilter {
                 runCatching {
                     val holder = chain.getThisObject() ?: return@runCatching
                     val model = chain.getArgs().firstOrNull() ?: return@runCatching
+                    if (!isDynamicVideoModel(model)) return@runCatching
                     val root = field(holder, "itemView") as? View ?: return@runCatching
 
-                    val aid = (field(model, "j") as? Number)?.toLong()?.takeIf { it > 0L }
+                    val aid = videoAid(model)
                     val bvid = aid?.let(AidBvidConverter::aidToBvid)?.takeIf { it.isNotBlank() }
                     val dynamicId = dynamicIdFor(model)
                     val prefs = root.context.getSharedPreferences(SettingsKeys.PREFS_NAME, Context.MODE_PRIVATE)
@@ -119,7 +97,7 @@ object DynamicFullVideoAdFilter {
         FullVideoLabelLookup.shared(bound.serverAddress).lookup(bound.bvid) { result ->
             val model = bound.model.get() ?: return@lookup
             val currentBinding = synchronized(lock) { boundCards[view] === bound }
-            val currentAid = (field(model, "j") as? Number)?.toLong()
+            val currentAid = videoAid(model)
             if (!currentBinding || currentAid != bound.aid || dynamicIdFor(model) != bound.dynamicId) return@lookup
             if (!shouldHideCards(view.context.getSharedPreferences(SettingsKeys.PREFS_NAME, Context.MODE_PRIVATE))) {
                 return@lookup
@@ -194,6 +172,35 @@ object DynamicFullVideoAdFilter {
             ?.toLong()
             ?.takeIf { it > 0L }
     }.getOrNull()
+
+    private fun findVideoBindMethod(classLoader: ClassLoader): Method? =
+        ResolvedTargets.effectiveDynamicVideoCardHolderClasses.firstNotNullOfOrNull { className ->
+            val holderClass = runCatching { Class.forName(className, false, classLoader) }.getOrNull()
+                ?: return@firstNotNullOfOrNull null
+            holderClass.declaredMethods.firstOrNull { method ->
+                method.returnType == Void.TYPE && HostTargets.DYNAMIC_VIDEO_BIND_METHOD_SHAPES.any {
+                    (methodName, parameterTypes) ->
+                    method.name == methodName && method.parameterTypes.map { it.name } == parameterTypes
+                }
+            }
+        }
+
+    private fun isDynamicVideoModel(model: Any): Boolean =
+        HostTargets.DYNAMIC_VIDEO_MODEL_CLASSES.any { className ->
+            val modelClass = runCatching {
+                Class.forName(className, false, model.javaClass.classLoader)
+            }.getOrNull()
+            modelClass?.isInstance(model) == true
+        }
+
+    private fun videoAid(model: Any): Long? =
+        HostTargets.DYNAMIC_VIDEO_MODEL_AID_FIELDS.firstNotNullOfOrNull { (modelClassName, fieldName) ->
+            val modelClass = runCatching {
+                Class.forName(modelClassName, false, model.javaClass.classLoader)
+            }.getOrNull()
+            if (modelClass?.isInstance(model) != true) return@firstNotNullOfOrNull null
+            (field(model, fieldName) as? Number)?.toLong()?.takeIf { it > 0L }
+        }
 
     private fun removeWholeDynamic(view: View, bound: BoundCard, module: XposedModule): Int {
         val recycler = enclosingRecyclerView(view) ?: run {

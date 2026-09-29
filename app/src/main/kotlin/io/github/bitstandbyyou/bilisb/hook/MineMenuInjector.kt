@@ -203,8 +203,8 @@ object MineMenuInjector {
     }
 
     private fun hookMineAdapter(module: XposedModule, classLoader: ClassLoader, menuItemClass: Class<*>) {
-        // 9.12.0 的 adapter 外层类被混淆成 tv.danmaku.bili.ui.main2.mine.d（真名候选优先，
-        // 宿主改版重排后由 DexKit 结构查询兜底，见 ResolvedTargets）
+        // 9.12.0 / 9.14.0 的 adapter 外层类均为 tv.danmaku.bili.ui.main2.mine.d（真名候选优先，
+        // 宿主后续改版重排时由 DexKit 结构查询兜底，见 ResolvedTargets）
         val adapterClass = HookResolve.findClass(
             classLoader,
             io.github.bitstandbyyou.bilisb.host.ResolvedTargets.effectiveMineAdapterClasses,

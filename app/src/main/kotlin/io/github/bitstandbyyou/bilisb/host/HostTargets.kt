@@ -1,7 +1,7 @@
 package io.github.bitstandbyyou.bilisb.host
 
 /**
- * 目标宿主（哔哩哔哩国内版 `tv.danmaku.bili` 9.12.0 / versionCode 9120300）的类名与方法名清单。
+ * 国内版 `tv.danmaku.bili` 9.12.0 / 9.14.0 的类名与方法候选清单。
  *
  * 国内版 9.12.0 的播放器栈**大量保留真名**（`PlayerProgressObserver`、`VideoDirectorObserver`、`PlayerContainer`、
  * `MenuGroup` 等），所以这里以真名为主，仅对确实被混淆的短名（如 `seek.v3.g`、`mine.d`）保留候选。
@@ -109,34 +109,70 @@ object HostTargets {
     const val RECOMMENDATION_CARD_BIND_METHOD = "onBindViewHolder"
     const val RECOMMENDATION_FEED_FRAGMENT = "com.bilibili.pegasus.PegasusFragment"
 
-    /** 播放页「更多视频」相关视频 AV 卡片渲染组件与 ViewBinding 类型。 */
+    /** 播放页「更多视频」相关推荐组件。新旧版本的 ViewBinding 混淆名不同，均保留。 */
     const val RELATED_AV_CARD_COMPONENT_CLASS =
         "com.bilibili.ship.theseus.united.page.intro.module.relate.av.RelateAvComponent"
     const val RELATED_AV_CARD_BIND_METHOD = "c"
-    const val RELATED_AV_CARD_BINDING_CLASS = "Oy0.k0"
-    const val RELATED_CARD_MODEL_CLASS = "com.bilibili.ship.theseus.united.page.intro.module.relate.A0"
-    const val RELATED_CARD_BASIC_INFO_CLASS = "com.bilibili.ship.theseus.united.page.intro.module.relate.B0"
+    const val RELATED_AV_CARD_BINDING_CLASS = "Iy0.m0"
+    val RELATED_AV_CARD_BINDING_CLASSES = listOf(RELATED_AV_CARD_BINDING_CLASS, "Oy0.k0")
+    const val RELATED_CARD_MODEL_CLASS = "com.bilibili.ship.theseus.united.page.intro.module.relate.B0"
+    val RELATED_CARD_MODEL_CLASSES = listOf(
+        RELATED_CARD_MODEL_CLASS,
+        "com.bilibili.ship.theseus.united.page.intro.module.relate.A0",
+    )
+    const val RELATED_CARD_BASIC_INFO_CLASS = "com.bilibili.ship.theseus.united.page.intro.module.relate.C0"
+    val RELATED_CARD_BASIC_INFO_CLASSES = listOf(
+        RELATED_CARD_BASIC_INFO_CLASS,
+        "com.bilibili.ship.theseus.united.page.intro.module.relate.B0",
+    )
 
-    /** UP 主投稿视频页的 AV 卡片持有者；绑定参数为 BiliSpaceVideo + adapter position。 */
-    val AUTHOR_VIDEO_CARD_HOLDER_CLASSES = listOf("Yg.n")
+    /** UP 主投稿视频卡片绑定点：旧版是 holder，新版由 AuthorSpaceVideoListFragment 的 Adapter 绑定。 */
+    val AUTHOR_VIDEO_CARD_HOLDER_CLASSES = listOf(
+        "com.bilibili.app.authorspace.ui.pages.AuthorSpaceVideoListFragment\$e",
+        "Yg.n",
+    )
     const val AUTHOR_SPACE_ACTIVITY_CLASS = "com.bilibili.app.authorspace.ui.AuthorSpaceActivity"
     const val AUTHOR_SPACE_VIDEO_MODEL_CLASS = "com.bilibili.app.authorspace.api.BiliSpaceVideo"
 
-    /** 动态视频卡片基类及绑定参数（9.12.0）：playable.z#y0(tS.U2, playable.e, service.Z, List)。 */
-    const val DYNAMIC_VIDEO_CARD_HOLDER_BASE_CLASS = "com.bilibili.bplus.followinglist.module.item.playable.z"
-    const val DYNAMIC_VIDEO_CARD_BIND_METHOD = "y0"
-    const val DYNAMIC_VIDEO_MODEL_BASE_CLASS = "tS.U2"
-    const val DYNAMIC_POST_MODEL_BASE_CLASS = "tS.G"
-    const val DYNAMIC_POST_MODEL_ROOT_CLASS = "tS.H"
+    /** 动态视频卡片绑定点：9.14.0 为 playable.x#v0(pS.G,eS.h,service.X,List)，旧版候选保留。 */
+    val DYNAMIC_VIDEO_CARD_HOLDER_CLASSES = listOf(
+        "com.bilibili.bplus.followinglist.module.item.playable.x",
+        "com.bilibili.bplus.followinglist.module.item.playable.z",
+    )
+    val DYNAMIC_VIDEO_BIND_METHOD_SHAPES = listOf(
+        "v0" to listOf(
+            "pS.G",
+            "eS.h",
+            "com.bilibili.bplus.followinglist.service.X",
+            "java.util.List",
+        ),
+        "y0" to listOf(
+            "tS.U2",
+            "com.bilibili.bplus.followinglist.module.item.playable.e",
+            "com.bilibili.bplus.followinglist.service.Z",
+            "java.util.List",
+        ),
+    )
+    val DYNAMIC_VIDEO_MODEL_CLASSES = listOf("pS.U2", "tS.U2")
+    val DYNAMIC_VIDEO_MODEL_AID_FIELDS = listOf("pS.U2" to "m", "tS.U2" to "j")
+    val DYNAMIC_POST_MODEL_TYPE_PAIRS = listOf("pS.G" to "pS.H", "tS.G" to "tS.H")
+    const val DYNAMIC_POST_MODEL_BASE_CLASS = "pS.G"
+    const val DYNAMIC_POST_MODEL_ROOT_CLASS = "pS.H"
     const val DYNAMIC_POST_MODEL_ROOT_METHOD = "M"
     const val DYNAMIC_POST_MODEL_ID_METHOD = "a"
-    const val DYNAMIC_MODULE_LIST_ADAPTER_CLASS = "dS.a"
-    const val DYNAMIC_MODULE_LIST_FIELD = "d"
+    const val DYNAMIC_MODULE_LIST_ADAPTER_CLASS = "ZR.a"
+    const val DYNAMIC_MODULE_LIST_FIELD = "e"
     const val DYNAMIC_MODULE_LIST_UPDATE_METHOD = "m0"
+    val DYNAMIC_MODULE_LIST_ADAPTER_SHAPES = listOf(
+        Triple(DYNAMIC_MODULE_LIST_ADAPTER_CLASS, DYNAMIC_MODULE_LIST_FIELD, DYNAMIC_MODULE_LIST_UPDATE_METHOD),
+        Triple("dS.a", "d", DYNAMIC_MODULE_LIST_UPDATE_METHOD),
+    )
 
     /** 新版 UP 主空间 H5 页面与归档游标接口。 */
     const val LOCAL_AUTHOR_SPACE_ACTIVITY_CLASS = "com.bilibili.app.authorspace.local.LocalAuthorSpaceActivity"
     const val HILO_CLIENT_CLASS = "com.bilibili.common.hilowebview.client.HiloClient"
+    /** HiloWebView 内部 WebView 字段：9.14.0 为 b；旧版候选 a 保留。 */
+    val HILO_WEBVIEW_INNER_VIEW_FIELDS = listOf("b", "a")
     const val AUTHOR_SPACE_ARCHIVE_API_PATH = "/x/v2/space/archive/cursor"
 
     /** director 服务实现类（类名未被混淆）。 */

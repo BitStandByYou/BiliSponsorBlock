@@ -48,10 +48,10 @@ object PlayerRelatedFullVideoAdFilter {
             ResolvedTargets.effectiveRelatedAvCardBindMethodNames,
             arity = 2,
         ) { typeName ->
-            typeName == HostTargets.RELATED_AV_CARD_BINDING_CLASS ||
+            typeName in HostTargets.RELATED_AV_CARD_BINDING_CLASSES ||
                 typeName == "kotlin.coroutines.Continuation"
         }?.takeIf { method ->
-            method.parameterTypes[0].name == HostTargets.RELATED_AV_CARD_BINDING_CLASS &&
+            method.parameterTypes[0].name in HostTargets.RELATED_AV_CARD_BINDING_CLASSES &&
                 method.parameterTypes[1].name == "kotlin.coroutines.Continuation"
         }
 
@@ -103,7 +103,9 @@ object PlayerRelatedFullVideoAdFilter {
         if (field(item, "a")?.toString() != "AV" || field(item, "b")?.toString() != "av") return null
 
         val basicInfo = field(item, "c") ?: return null
-        if (basicInfo.javaClass.name != HostTargets.RELATED_CARD_BASIC_INFO_CLASS) return null
+        if (item.javaClass.name !in HostTargets.RELATED_CARD_MODEL_CLASSES ||
+            basicInfo.javaClass.name !in HostTargets.RELATED_CARD_BASIC_INFO_CLASSES
+        ) return null
         val aid = (field(basicInfo, "l") as? Number)?.toLong()?.takeIf { it > 0L } ?: return null
         val bvid = AidBvidConverter.aidToBvid(aid).takeIf { it.isNotBlank() } ?: return null
         return item to bvid
@@ -115,7 +117,7 @@ object PlayerRelatedFullVideoAdFilter {
         FullVideoLabelLookup.shared(bound.serverAddress).lookup(bound.bvid) { result ->
             val item = bound.item.get() ?: return@lookup
             val isCurrentBinding = synchronized(lock) { boundCards[view] === bound }
-            if (!isCurrentBinding || item.javaClass.name != HostTargets.RELATED_CARD_MODEL_CLASS) return@lookup
+            if (!isCurrentBinding || item.javaClass.name !in HostTargets.RELATED_CARD_MODEL_CLASSES) return@lookup
             if (!shouldHideCards(view.context.getSharedPreferences(SettingsKeys.PREFS_NAME, Context.MODE_PRIVATE))) {
                 return@lookup
             }

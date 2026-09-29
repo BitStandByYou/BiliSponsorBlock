@@ -36,10 +36,11 @@ object AuthorSpaceFullVideoAdFilter {
         val classNames = ResolvedTargets.effectiveAuthorVideoCardHolderClasses
         var hooked = 0
         classNames.forEach { className ->
-            val holderClass = runCatching { Class.forName(className, false, classLoader) }.getOrNull()
+            val targetClass = runCatching { Class.forName(className, false, classLoader) }.getOrNull()
                 ?: return@forEach
-            val bindMethods = holderClass.declaredMethods.filter(::isVideoBindMethod)
+            val bindMethods = targetClass.declaredMethods.filter { isVideoBindMethod(it) || isVideoAdapterBindMethod(it) }
             bindMethods.forEach { method ->
+                val adapterBinding = isVideoAdapterBindMethod(method)
                 method.isAccessible = true
                 module.hook(method)
                     .setPriority(XposedInterface.PRIORITY_DEFAULT)
@@ -47,8 +48,18 @@ object AuthorSpaceFullVideoAdFilter {
                     .intercept { chain ->
                         val result = chain.proceed()
                         runCatching {
-                            val holder = chain.getThisObject() ?: return@runCatching
-                            val item = chain.getArgs().firstOrNull() ?: return@runCatching
+                            val target = chain.getThisObject() ?: return@runCatching
+                            val args = chain.getArgs()
+                            val holder: Any
+                            val item: Any
+                            if (adapterBinding) {
+                                holder = args.getOrNull(0) ?: return@runCatching
+                                val position = args.getOrNull(1) as? Int ?: return@runCatching
+                                item = videoItemAt(target, position) ?: return@runCatching
+                            } else {
+                                holder = target
+                                item = args.firstOrNull() ?: return@runCatching
+                            }
                             val root = field(holder, "itemView") as? View ?: return@runCatching
 
                             // RecyclerView 复用时仅撤销本过滤器留下的 GONE。
@@ -99,6 +110,29 @@ object AuthorSpaceFullVideoAdFilter {
             method.parameterTypes.size == 2 &&
             method.parameterTypes[0].name == HostTargets.AUTHOR_SPACE_VIDEO_MODEL_CLASS &&
             method.parameterTypes[1] == Int::class.javaPrimitiveType
+
+    private fun isVideoAdapterBindMethod(method: Method): Boolean =
+        method.name == "onBindViewHolder" &&
+            method.returnType == Void.TYPE &&
+            method.parameterTypes.size == 2 &&
+            method.parameterTypes[0].name == "androidx.recyclerview.widget.RecyclerView\$ViewHolder" &&
+            method.parameterTypes[1] == Int::class.javaPrimitiveType
+
+    private fun videoItemAt(adapter: Any, position: Int): Any? {
+        var type: Class<*>? = adapter.javaClass
+        while (type != null) {
+            for (field in type.declaredFields) {
+                if (!java.util.List::class.java.isAssignableFrom(field.type)) continue
+                val item = runCatching {
+                    field.isAccessible = true
+                    (field.get(adapter) as? List<*>)?.getOrNull(position)
+                }.getOrNull()
+                if (item?.javaClass?.name == HostTargets.AUTHOR_SPACE_VIDEO_MODEL_CLASS) return item
+            }
+            type = type.superclass
+        }
+        return null
+    }
 
     private fun checkCard(view: View, bound: BoundCard, prefs: SharedPreferences, module: XposedModule) {
         if (!shouldHideCards(prefs)) return

@@ -29,6 +29,10 @@ object ResolvedTargets {
     @Volatile
     var authorVideoCardHolderClasses: List<String>? = null
 
+    /** 关注流动态视频绑定 holder（短混淆名，按绑定参数签名定位）。 */
+    @Volatile
+    var dynamicVideoCardHolderClasses: List<String>? = null
+
     /** 动态列表适配器的模块列表字段、差量更新方法与动态分组 ID 访问方法。 */
     @Volatile
     var dynamicModuleListAdapterClass: String? = null
@@ -52,6 +56,9 @@ object ResolvedTargets {
 
     val effectiveAuthorVideoCardHolderClasses: List<String>
         get() = authorVideoCardHolderClasses ?: HostTargets.AUTHOR_VIDEO_CARD_HOLDER_CLASSES
+
+    val effectiveDynamicVideoCardHolderClasses: List<String>
+        get() = dynamicVideoCardHolderClasses ?: HostTargets.DYNAMIC_VIDEO_CARD_HOLDER_CLASSES
 
     val effectiveDynamicModuleListAdapterClass: String
         get() = dynamicModuleListAdapterClass ?: HostTargets.DYNAMIC_MODULE_LIST_ADAPTER_CLASS
@@ -80,6 +87,10 @@ object DexKitResolver {
     private const val DRAWABLE = "android.graphics.drawable.Drawable"
     private const val ADAPTER = "androidx.recyclerview.widget.RecyclerView\$Adapter"
     private const val VIEW_HOLDER = "androidx.recyclerview.widget.RecyclerView\$ViewHolder"
+    private const val AUTHOR_VIDEO_ADAPTER_PREFIX =
+        "com.bilibili.app.authorspace.ui.pages.AuthorSpaceVideoListFragment\$"
+    private const val DYNAMIC_VIDEO_HOLDER_PREFIX =
+        "com.bilibili.bplus.followinglist.module.item.playable."
     private const val CANVAS = "android.graphics.Canvas"
 
     @Volatile
@@ -109,10 +120,11 @@ object DexKitResolver {
         val needMine = !candidatesAllPresent(classLoader, HostTargets.MINE_ADAPTER_CLASSES)
         val needRelatedAvCard = !relatedAvCardBindCandidatePresent(classLoader)
         val needAuthorVideoCard = !authorVideoCardBindCandidatePresent(classLoader)
+        val needDynamicVideoCard = !dynamicVideoCardBindCandidatePresent(classLoader)
         val needDynamicListAdapter = !dynamicListAdapterCandidatePresent(classLoader)
         val needDynamicPostMethods = !dynamicPostMethodsCandidatePresent(classLoader)
         if (!needSeek && !needMine && !needRelatedAvCard && !needAuthorVideoCard &&
-            !needDynamicListAdapter && !needDynamicPostMethods
+            !needDynamicVideoCard && !needDynamicListAdapter && !needDynamicPostMethods
         ) {
             module.info("混淆锚点候选名全部存在，跳过 DexKit 解析")
             return
@@ -162,15 +174,14 @@ object DexKitResolver {
                     }
                 }
                 if (needRelatedAvCard) {
-                    val found = bridge.findMethod {
-                        matcher {
-                            declaredClass = HostTargets.RELATED_AV_CARD_COMPONENT_CLASS
-                            returnType = "java.lang.Object"
-                            paramCount = 2
-                            paramTypes = listOf(
-                                HostTargets.RELATED_AV_CARD_BINDING_CLASS,
-                                "kotlin.coroutines.Continuation",
-                            )
+                    val found = HostTargets.RELATED_AV_CARD_BINDING_CLASSES.flatMap { bindingClass ->
+                        bridge.findMethod {
+                            matcher {
+                                declaredClass = HostTargets.RELATED_AV_CARD_COMPONENT_CLASS
+                                returnType = "java.lang.Object"
+                                paramCount = 2
+                                paramTypes = listOf(bindingClass, "kotlin.coroutines.Continuation")
+                            }
                         }
                     }.map { it.name }.distinct()
                     if (found.size == 1) {
@@ -181,7 +192,7 @@ object DexKitResolver {
                     }
                 }
                 if (needAuthorVideoCard) {
-                    val found = bridge.findClass {
+                    val directHolderClasses = bridge.findClass {
                         matcher {
                             className("Yg.", StringMatchType.StartsWith, false)
                             superClass(VIEW_HOLDER, StringMatchType.Equals, false)
@@ -192,12 +203,48 @@ object DexKitResolver {
                                 }
                             }
                         }
-                    }.map { it.name }.distinct()
-                    if (found.size == 1) {
+                    }.map { it.name }
+                    val adapterClasses = bridge.findClass {
+                        matcher {
+                            className(AUTHOR_VIDEO_ADAPTER_PREFIX, StringMatchType.StartsWith, false)
+                            superClass(ADAPTER, StringMatchType.Equals, false)
+                            methods {
+                                add {
+                                    name = "onBindViewHolder"
+                                    returnType = "void"
+                                    paramTypes = listOf(VIEW_HOLDER, "int")
+                                }
+                            }
+                        }
+                    }.map { it.name }
+                    val found = (directHolderClasses + adapterClasses).distinct()
+                    if (found.isNotEmpty()) {
                         ResolvedTargets.authorVideoCardHolderClasses = found
                         module.info("DexKit 定位 UP 主投稿视频卡片：$found")
                     } else {
-                        module.warn("DexKit 未能唯一定位 UP 主投稿视频卡片，沿用候选名：$found")
+                        module.warn("DexKit 未找到 UP 主投稿视频卡片，沿用候选名")
+                    }
+                }
+                if (needDynamicVideoCard) {
+                    val found = HostTargets.DYNAMIC_VIDEO_BIND_METHOD_SHAPES.flatMap { (methodName, parameterTypes) ->
+                        bridge.findClass {
+                            matcher {
+                                className(DYNAMIC_VIDEO_HOLDER_PREFIX, StringMatchType.StartsWith, false)
+                                methods {
+                                    add {
+                                        name = methodName
+                                        returnType = "void"
+                                        paramTypes = parameterTypes
+                                    }
+                                }
+                            }
+                        }.map { it.name }
+                    }.distinct()
+                    if (found.isNotEmpty()) {
+                        ResolvedTargets.dynamicVideoCardHolderClasses = found
+                        module.info("DexKit 定位动态视频卡片绑定类：$found")
+                    } else {
+                        module.warn("DexKit 未找到动态视频卡片绑定类，沿用候选名")
                     }
                 }
                 if (needDynamicListAdapter) {
@@ -247,18 +294,22 @@ object DexKitResolver {
                     }
                 }
                 if (needDynamicPostMethods) {
-                    val rootMethods = bridge.findMethod {
-                        matcher {
-                            declaredClass = HostTargets.DYNAMIC_POST_MODEL_BASE_CLASS
-                            returnType = HostTargets.DYNAMIC_POST_MODEL_ROOT_CLASS
-                            paramCount = 0
+                    val rootMethods = HostTargets.DYNAMIC_POST_MODEL_TYPE_PAIRS.flatMap { (baseClass, rootClass) ->
+                        bridge.findMethod {
+                            matcher {
+                                declaredClass = baseClass
+                                returnType = rootClass
+                                paramCount = 0
+                            }
                         }
                     }.map { it.name }.distinct()
-                    val idMethods = bridge.findMethod {
-                        matcher {
-                            declaredClass = HostTargets.DYNAMIC_POST_MODEL_ROOT_CLASS
-                            returnType = "long"
-                            paramCount = 0
+                    val idMethods = HostTargets.DYNAMIC_POST_MODEL_TYPE_PAIRS.flatMap { (_, rootClass) ->
+                        bridge.findMethod {
+                            matcher {
+                                declaredClass = rootClass
+                                returnType = "long"
+                                paramCount = 0
+                            }
                         }
                     }.map { it.name }.distinct()
                     if (rootMethods.size == 1) {
@@ -292,7 +343,7 @@ object DexKitResolver {
         return clazz.declaredMethods.any { method ->
             method.name == HostTargets.RELATED_AV_CARD_BIND_METHOD &&
                 method.parameterTypes.size == 2 &&
-                method.parameterTypes[0].name == HostTargets.RELATED_AV_CARD_BINDING_CLASS &&
+                method.parameterTypes[0].name in HostTargets.RELATED_AV_CARD_BINDING_CLASSES &&
                 method.parameterTypes[1].name == "kotlin.coroutines.Continuation"
         }
     }
@@ -300,41 +351,68 @@ object DexKitResolver {
     private fun authorVideoCardBindCandidatePresent(classLoader: ClassLoader): Boolean =
         HostTargets.AUTHOR_VIDEO_CARD_HOLDER_CLASSES.any { name ->
             val clazz = runCatching { Class.forName(name, false, classLoader) }.getOrNull() ?: return@any false
-            clazz.declaredMethods.any { method ->
+            val directHolderBind = clazz.declaredMethods.any { method ->
                 method.returnType == Void.TYPE &&
                     method.parameterTypes.size == 2 &&
                     method.parameterTypes[0].name == HostTargets.AUTHOR_SPACE_VIDEO_MODEL_CLASS &&
                     method.parameterTypes[1] == Int::class.javaPrimitiveType
             }
+            val adapterBind = clazz.declaredMethods.any { method ->
+                method.name == "onBindViewHolder" && method.returnType == Void.TYPE &&
+                    method.parameterTypes.size == 2 &&
+                    method.parameterTypes[0].name == "androidx.recyclerview.widget.RecyclerView\$ViewHolder" &&
+                    method.parameterTypes[1] == Int::class.javaPrimitiveType
+            } && clazz.declaredFields.any { java.util.List::class.java.isAssignableFrom(it.type) }
+            directHolderBind || adapterBind
         }
 
     private fun dynamicListAdapterCandidatePresent(classLoader: ClassLoader): Boolean {
-        val clazz = runCatching {
-            Class.forName(HostTargets.DYNAMIC_MODULE_LIST_ADAPTER_CLASS, false, classLoader)
-        }.getOrNull() ?: return false
-        return clazz.declaredFields.any { it.name == HostTargets.DYNAMIC_MODULE_LIST_FIELD &&
-            List::class.java.isAssignableFrom(it.type)
-        } && clazz.declaredMethods.any { method ->
-            method.name == HostTargets.DYNAMIC_MODULE_LIST_UPDATE_METHOD &&
-                method.returnType == Void.TYPE && method.parameterTypes.contentEquals(arrayOf(List::class.java))
+        for ((className, fieldName, methodName) in HostTargets.DYNAMIC_MODULE_LIST_ADAPTER_SHAPES) {
+            val clazz = runCatching { Class.forName(className, false, classLoader) }.getOrNull() ?: continue
+            val fieldFound = clazz.declaredFields.any { it.name == fieldName &&
+                List::class.java.isAssignableFrom(it.type)
+            }
+            val methodFound = clazz.declaredMethods.any { method ->
+                method.name == methodName && method.returnType == Void.TYPE &&
+                    method.parameterTypes.contentEquals(arrayOf(List::class.java))
+            }
+            if (fieldFound && methodFound) {
+                ResolvedTargets.dynamicModuleListAdapterClass = className
+                ResolvedTargets.dynamicModuleListField = fieldName
+                ResolvedTargets.dynamicModuleListUpdateMethodName = methodName
+                return true
+            }
         }
+        return false
     }
 
+    private fun dynamicVideoCardBindCandidatePresent(classLoader: ClassLoader): Boolean =
+        HostTargets.DYNAMIC_VIDEO_CARD_HOLDER_CLASSES.any { className ->
+            val clazz = runCatching { Class.forName(className, false, classLoader) }.getOrNull()
+                ?: return@any false
+            clazz.declaredMethods.any { method ->
+                method.returnType == Void.TYPE && HostTargets.DYNAMIC_VIDEO_BIND_METHOD_SHAPES.any {
+                    (methodName, parameterTypes) ->
+                    method.name == methodName && method.parameterTypes.map { it.name } == parameterTypes
+                }
+            }
+        }
+
     private fun dynamicPostMethodsCandidatePresent(classLoader: ClassLoader): Boolean {
-        val base = runCatching {
-            Class.forName(HostTargets.DYNAMIC_POST_MODEL_BASE_CLASS, false, classLoader)
-        }.getOrNull() ?: return false
-        val root = runCatching {
-            Class.forName(HostTargets.DYNAMIC_POST_MODEL_ROOT_CLASS, false, classLoader)
-        }.getOrNull() ?: return false
-        val rootMethodPresent = base.declaredMethods.any { method ->
-            method.name == HostTargets.DYNAMIC_POST_MODEL_ROOT_METHOD &&
-                method.returnType == root && method.parameterTypes.isEmpty()
+        return HostTargets.DYNAMIC_POST_MODEL_TYPE_PAIRS.any { (baseName, rootName) ->
+            val base = runCatching { Class.forName(baseName, false, classLoader) }.getOrNull()
+                ?: return@any false
+            val root = runCatching { Class.forName(rootName, false, classLoader) }.getOrNull()
+                ?: return@any false
+            val rootMethodPresent = base.declaredMethods.any { method ->
+                method.name == HostTargets.DYNAMIC_POST_MODEL_ROOT_METHOD &&
+                    method.returnType == root && method.parameterTypes.isEmpty()
+            }
+            val idMethodPresent = root.declaredMethods.any { method ->
+                method.name == HostTargets.DYNAMIC_POST_MODEL_ID_METHOD &&
+                    method.returnType == java.lang.Long.TYPE && method.parameterTypes.isEmpty()
+            }
+            rootMethodPresent && idMethodPresent
         }
-        val idMethodPresent = root.declaredMethods.any { method ->
-            method.name == HostTargets.DYNAMIC_POST_MODEL_ID_METHOD &&
-                method.returnType == java.lang.Long.TYPE && method.parameterTypes.isEmpty()
-        }
-        return rootMethodPresent && idMethodPresent
     }
 }
