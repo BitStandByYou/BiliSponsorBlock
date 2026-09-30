@@ -9,6 +9,7 @@ local.properties
 *.iml
 .idea/
 .DS_Store
+.agents/
 
 # 签名密钥与口令 —— 绝不入库
 keystore.properties
