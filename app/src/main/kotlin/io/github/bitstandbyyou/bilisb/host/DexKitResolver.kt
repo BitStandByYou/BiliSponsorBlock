@@ -45,6 +45,12 @@ object ResolvedTargets {
     @Volatile
     var dynamicPostIdMethodName: String? = null
 
+    /** StorySeekBar 的混淆 controller setter 与进度 observer。 */
+    @Volatile
+    var storySeekBarControllerMethodName: String? = null
+    @Volatile
+    var storyProgressObserverClasses: List<String>? = null
+
     val effectiveSeekTrackClasses: List<String>
         get() = seekTrackClasses ?: HostTargets.SEEK_TRACK_CLASSES
 
@@ -70,6 +76,10 @@ object ResolvedTargets {
         get() = dynamicPostRootMethodName ?: HostTargets.DYNAMIC_POST_MODEL_ROOT_METHOD
     val effectiveDynamicPostIdMethodName: String
         get() = dynamicPostIdMethodName ?: HostTargets.DYNAMIC_POST_MODEL_ID_METHOD
+    val effectiveStorySeekBarControllerMethodNames: List<String>
+        get() = listOfNotNull(storySeekBarControllerMethodName).plus(HostTargets.STORY_SEEK_BAR_CONTROLLER_METHODS).distinct()
+    val effectiveStoryProgressObserverClasses: List<String>
+        get() = storyProgressObserverClasses ?: HostTargets.STORY_PROGRESS_OBSERVER_CLASSES
 }
 
 /**
@@ -123,8 +133,16 @@ object DexKitResolver {
         val needDynamicVideoCard = !dynamicVideoCardBindCandidatePresent(classLoader)
         val needDynamicListAdapter = !dynamicListAdapterCandidatePresent(classLoader)
         val needDynamicPostMethods = !dynamicPostMethodsCandidatePresent(classLoader)
+        val storySeekBarPresent = runCatching {
+            Class.forName(HostTargets.STORY_SEEK_BAR_CLASS, false, classLoader)
+        }.getOrNull() != null
+        val needStorySeekBarController = storySeekBarPresent &&
+            !storySeekBarControllerCandidatePresent(classLoader)
+        val needStoryProgressObserver = storySeekBarPresent &&
+            !storyProgressObserverCandidatePresent(classLoader)
         if (!needSeek && !needMine && !needRelatedAvCard && !needAuthorVideoCard &&
-            !needDynamicVideoCard && !needDynamicListAdapter && !needDynamicPostMethods
+            !needDynamicVideoCard && !needDynamicListAdapter && !needDynamicPostMethods &&
+            !needStorySeekBarController && !needStoryProgressObserver
         ) {
             module.info("混淆锚点候选名全部存在，跳过 DexKit 解析")
             return
@@ -324,6 +342,42 @@ object DexKitResolver {
                         module.info("DexKit 定位动态分组访问方法：${rootMethods.single()}/${idMethods.single()}")
                     }
                 }
+                if (needStorySeekBarController) {
+                    val methods = bridge.findMethod {
+                        matcher {
+                            declaredClass = HostTargets.STORY_SEEK_BAR_CLASS
+                            returnType = "void"
+                            paramCount = 1
+                            paramTypes = listOf(HostTargets.STORY_SEEK_BAR_CONTROLLER_TYPE)
+                        }
+                    }.map { it.name }.distinct()
+                    if (methods.size == 1) {
+                        ResolvedTargets.storySeekBarControllerMethodName = methods.single()
+                        module.info("DexKit 定位 StorySeekBar controller setter：${methods.single()}")
+                    } else {
+                        module.warn("DexKit 未能唯一定位 StorySeekBar controller setter：$methods")
+                    }
+                }
+                if (needStoryProgressObserver) {
+                    val classes = bridge.findClass {
+                        matcher {
+                            className(HostTargets.STORY_SEEK_BAR_CLASS + "\$", StringMatchType.StartsWith, false)
+                            methods {
+                                add {
+                                    name = HostTargets.STORY_PROGRESS_OBSERVER_METHOD
+                                    returnType = "void"
+                                    paramTypes = listOf("int", "int")
+                                }
+                            }
+                        }
+                    }.map { it.name }.distinct()
+                    if (classes.size == 1) {
+                        ResolvedTargets.storyProgressObserverClasses = classes
+                        module.info("DexKit 定位 StorySeekBar progress observer：$classes")
+                    } else {
+                        module.warn("DexKit 未能唯一定位 StorySeekBar progress observer：$classes")
+                    }
+                }
             }
         }.onFailure {
             module.warn("DexKit 解析失败，回退候选名：${it.javaClass.simpleName}: ${it.message}")
@@ -415,4 +469,28 @@ object DexKitResolver {
             rootMethodPresent && idMethodPresent
         }
     }
+
+    private fun storySeekBarControllerCandidatePresent(classLoader: ClassLoader): Boolean {
+        val clazz = runCatching {
+            Class.forName(HostTargets.STORY_SEEK_BAR_CLASS, false, classLoader)
+        }.getOrNull() ?: return false
+        return HostTargets.STORY_SEEK_BAR_CONTROLLER_METHODS.any { name ->
+            clazz.declaredMethods.any { method ->
+                method.name == name && method.returnType == Void.TYPE &&
+                    method.parameterTypes.map { it.name } == listOf(HostTargets.STORY_SEEK_BAR_CONTROLLER_TYPE)
+            }
+        }
+    }
+
+    private fun storyProgressObserverCandidatePresent(classLoader: ClassLoader): Boolean =
+        HostTargets.STORY_PROGRESS_OBSERVER_CLASSES.any { className ->
+            val clazz = runCatching { Class.forName(className, false, classLoader) }.getOrNull()
+                ?: return@any false
+            clazz.declaredMethods.any { method ->
+                method.name == HostTargets.STORY_PROGRESS_OBSERVER_METHOD &&
+                    method.returnType == Void.TYPE && method.parameterTypes.contentEquals(
+                        arrayOf(Int::class.javaPrimitiveType, Int::class.javaPrimitiveType),
+                    )
+            }
+        }
 }

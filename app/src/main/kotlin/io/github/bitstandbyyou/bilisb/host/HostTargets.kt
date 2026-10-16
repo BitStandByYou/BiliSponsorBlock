@@ -36,6 +36,15 @@ object HostTargets {
         "com.bilibili.playerbizcommon.widget.control.PlayerProgressTextWidget",
     )
 
+    /** 竖屏 Story 播放器的独立进度条，不走普通 PlayerProgressTextWidget。 */
+    const val STORY_SEEK_BAR_CLASS = "com.bilibili.video.story.view.StorySeekBar"
+    const val STORY_SEEK_BAR_CONTROLLER_TYPE = "com.bilibili.video.story.action.j"
+    val STORY_SEEK_BAR_CONTROLLER_METHODS = listOf("c0")
+    val STORY_PROGRESS_OBSERVER_CLASSES = listOf("com.bilibili.video.story.view.StorySeekBar\$f")
+    const val STORY_PROGRESS_OBSERVER_METHOD = "onPlayerProgressChange"
+    val STORY_PLAYER_METHODS = listOf("getPlayer")
+    val STORY_CURRENT_PLAYABLE_METHODS = listOf("getCurrentPlayableParam", "getCurrentPlayableParams")
+
     /**
      * 进度回调候选（int,int）。9.12.0 实测：`PlayerProgressTextWidget implements
      * PlayerProgressObserver`，回调方法为 `onPlayerProgressChange(int position, int duration)`。

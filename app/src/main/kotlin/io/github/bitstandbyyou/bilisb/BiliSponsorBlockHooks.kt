@@ -13,6 +13,7 @@ import io.github.bitstandbyyou.bilisb.host.DexKitResolver
 import io.github.bitstandbyyou.bilisb.host.HookProbe
 import io.github.bitstandbyyou.bilisb.host.HookResolve
 import io.github.bitstandbyyou.bilisb.host.HostTargets
+import io.github.bitstandbyyou.bilisb.host.ResolvedTargets
 import io.github.bitstandbyyou.bilisb.player.PlayerBridge
 import io.github.bitstandbyyou.bilisb.player.PlayerHandle
 import io.github.bitstandbyyou.bilisb.player.VideoDirectorListener
@@ -21,6 +22,7 @@ import io.github.bitstandbyyou.bilisb.ui.ProgressMarkerPainter
 import io.github.bitstandbyyou.bilisb.ui.RemainingTimeFormatter
 import io.github.bitstandbyyou.bilisb.util.info
 import io.github.bitstandbyyou.bilisb.util.warn
+import java.lang.ref.WeakReference
 import java.lang.reflect.Method
 import java.util.Collections
 import java.util.WeakHashMap
@@ -34,6 +36,18 @@ import java.util.concurrent.ConcurrentHashMap
  */
 object BiliSponsorBlockHooks {
     private val installed = ConcurrentHashMap.newKeySet<String>()
+
+    private data class StoryBinding(
+        val contextHash: Int,
+        val ids: Pair<Long, Long>,
+        val player: WeakReference<Any>,
+    )
+
+    /** Story 的控制器和绑定都以 View 为弱键，避免播放器销毁后静态表反向持有页面。 */
+    private val storyControllers: MutableMap<View, WeakReference<Any>> =
+        Collections.synchronizedMap(WeakHashMap<View, WeakReference<Any>>())
+    private val storyBindings: MutableMap<View, StoryBinding> =
+        Collections.synchronizedMap(WeakHashMap<View, StoryBinding>())
 
     // 这两个字段被多个线程读（进度回调线程 / draw 线程 / 容器绑定线程），必须 @Volatile，
     // 否则设置改动或 controller 重建后，其它线程可能长时间读到旧值。
@@ -71,6 +85,7 @@ object BiliSponsorBlockHooks {
         // （曾经出现过"一条 hook 抛异常 → 标记/时间扣减/我的页菜单全都没装"的情况）。
         installSafely(module, "directorService") { hookDirectorService(module, cl) }
         installSafely(module, "containerBinding") { hookContainerBinding(module, cl) }
+        installSafely(module, "storyPlayer") { hookStoryPlayer(module, cl) }
         installSafely(module, "seekTrack") { hookProgressDrawable(module, cl) }
         installSafely(module, "progressCallback") { hookProgressText(module, cl) }
         installSafely(module, "mineMenu") { io.github.bitstandbyyou.bilisb.hook.MineMenuInjector.install(module, cl) }
@@ -179,6 +194,179 @@ object BiliSponsorBlockHooks {
         if (!teardownHooked) {
             HookProbe.miss(module, "playerTeardown", "widget detach hook not found")
         }
+    }
+
+    /** Story 竖屏播放器不经过 PlayerContainer widget，改从 StorySeekBar 的 controller 接入。 */
+    private fun hookStoryPlayer(module: XposedModule, cl: ClassLoader) {
+        val seekBarClass = runCatching {
+            Class.forName(HostTargets.STORY_SEEK_BAR_CLASS, false, cl)
+        }.getOrNull() ?: run {
+            HookProbe.miss(module, "storyPlayer", "${HostTargets.STORY_SEEK_BAR_CLASS} not found")
+            return
+        }
+
+        var hooked = false
+        HookResolve.declaredMethodByShape(
+            seekBarClass,
+            ResolvedTargets.effectiveStorySeekBarControllerMethodNames,
+            1,
+            paramTypeName = { it == HostTargets.STORY_SEEK_BAR_CONTROLLER_TYPE },
+        )?.let { setter ->
+            hookAfter(module, setter, "storyControllerBinding") { chain ->
+                val seekBar = chain.getThisObject() as? View ?: return@hookAfter
+                val storyController = chain.getArgs().getOrNull(0) ?: return@hookAfter
+                storyControllers[seekBar] = WeakReference(storyController)
+                ensureStoryPlayerBound(module, seekBar)
+            }
+            hooked = true
+        } ?: HookProbe.miss(module, "storyControllerBinding", "controller setter not found")
+
+        HookResolve.declaredMethod(
+            seekBarClass,
+            listOf("onStart"),
+            Int::class.javaPrimitiveType!!,
+        )?.let { onStart ->
+            hookAfter(module, onStart, "storySeekBarStart") { chain ->
+                (chain.getThisObject() as? View)?.let { ensureStoryPlayerBound(module, it) }
+            }
+            hooked = true
+        } ?: HookProbe.miss(module, "storySeekBarStart", "onStart(int) not found")
+
+        HookResolve.methodIncludingInherited(
+            seekBarClass,
+            listOf(HostTargets.WIDGET_DETACH_METHOD),
+        )?.let { detach ->
+            hookAfter(module, detach, "storySeekBarDetach") { chain ->
+                val seekBar = chain.getThisObject() as? View ?: return@hookAfter
+                onPlayerLeft(module, seekBar, null)
+            }
+        } ?: HookProbe.miss(module, "storySeekBarDetach", "detach callback not found")
+
+        hookStoryProgressObserver(module, cl)
+        hookStorySeekBarDraw(module, seekBarClass)
+        if (!hooked) HookProbe.miss(module, "storyPlayer", "no StorySeekBar binding callbacks found")
+    }
+
+    /** StorySeekBar 把实际进度委托给内部 PlayerProgressObserver，而非普通播放器进度控件。 */
+    private fun hookStoryProgressObserver(module: XposedModule, cl: ClassLoader) {
+        var hooked = 0
+        for (className in ResolvedTargets.effectiveStoryProgressObserverClasses) {
+            val clazz = runCatching { Class.forName(className, false, cl) }.getOrNull() ?: continue
+            val method = HookResolve.declaredMethod(
+                clazz,
+                listOf(HostTargets.STORY_PROGRESS_OBSERVER_METHOD),
+                Int::class.javaPrimitiveType!!,
+                Int::class.javaPrimitiveType!!,
+            ) ?: continue
+
+            hookAfter(module, method, "storyProgress:$className") { chain ->
+                val observer = chain.getThisObject() ?: return@hookAfter
+                val args = chain.getArgs()
+                val positionMs = (args.getOrNull(0) as? Number)?.toLong() ?: return@hookAfter
+                val durationMs = (args.getOrNull(1) as? Number)?.toLong() ?: return@hookAfter
+                if (durationMs <= 0 || positionMs < 0 || positionMs > durationMs + 1000) return@hookAfter
+
+                val seekBar = storySeekBarOf(observer) ?: run {
+                    HookProbe.first(module, "storyProgressNoSeekBar", 3) { observer.javaClass.name }
+                    return@hookAfter
+                }
+                val contextHash = ensureStoryPlayerBound(module, seekBar) ?: return@hookAfter
+                cancelDeferredTeardown(module, contextHash)
+                val controller = sponsorBlockController ?: return@hookAfter
+                if (!controller.latestStateExists(contextHash)) return@hookAfter
+                controller.onProgress(contextHash, positionMs, durationMs)
+                HookProbe.first(module, "storyProgressArgs", 5) {
+                    "position=$positionMs duration=$durationMs context=$contextHash"
+                }
+            }
+            hooked++
+        }
+        if (hooked == 0) {
+            HookProbe.miss(
+                module,
+                "storyProgress",
+                ResolvedTargets.effectiveStoryProgressObserverClasses.joinToString(),
+            )
+        }
+    }
+
+    /** 通过观察者的 StorySeekBar 类型字段回到对应 View，不扫描宿主 ClassLoader。 */
+    private fun storySeekBarOf(observer: Any): View? {
+        var type: Class<*>? = observer.javaClass
+        while (type != null && type != Any::class.java) {
+            val field = type.declaredFields.firstOrNull {
+                it.type.name == HostTargets.STORY_SEEK_BAR_CLASS
+            }
+            if (field != null) {
+                return runCatching {
+                    field.isAccessible = true
+                    field.get(observer) as? View
+                }.getOrNull()
+            }
+            type = type.superclass
+        }
+        return null
+    }
+
+    /** 建立 Story handle，并在 Story 翻页后从当前 PlayableParams 更新 aid/cid。 */
+    private fun ensureStoryPlayerBound(module: XposedModule, seekBar: View): Int? {
+        val storyController = storyControllers[seekBar]?.get() ?: return null
+        val storyPlayer = HookResolve.invokeNoArg(storyController, HostTargets.STORY_PLAYER_METHODS) ?: return null
+        val context = PlayerBridge.context(seekBar) ?: return null
+        ensureSettingsLoaded(module, context)
+        if (!settings.enabled) return null
+
+        val controller = sponsorBlockController ?: return null
+        val currentPlayable = HookResolve.invokeNoArg(storyPlayer, HostTargets.STORY_CURRENT_PLAYABLE_METHODS)
+        val ids = currentPlayable?.let { VideoDirectorListener.extractVideoIds(module, it) } ?: return null
+        val contextHash = PlayerBridge.contextHash(context)
+        if (contextHash == 0) return null
+
+        controller.bindPlayerHandle(PlayerHandle(contextHash, seekBar, storyPlayer, context))
+        VideoDirectorListener.noteContextHash(contextHash)
+
+        val previous = storyBindings[seekBar]
+        val samePlayer = previous?.player?.get() === storyPlayer
+        if (previous?.contextHash != contextHash || previous.ids != ids || !samePlayer ||
+            !controller.latestStateExists(contextHash)
+        ) {
+            controller.onVideoIds(contextHash, ids.first, ids.second)
+            storyBindings[seekBar] = StoryBinding(contextHash, ids, WeakReference(storyPlayer))
+            HookProbe.first(module, "storyPlayerBound", 5) {
+                "context=$contextHash aid=${ids.first} cid=${ids.second} player=${storyPlayer.javaClass.name}"
+            }
+        }
+        return contextHash
+    }
+
+    /** StorySeekBar 自己绘制进度轨道；普通 seek.v3 Drawable hook 不会覆盖它。 */
+    private fun hookStorySeekBarDraw(module: XposedModule, seekBarClass: Class<*>) {
+        val method = HookResolve.declaredMethod(seekBarClass, listOf("onDraw"), Canvas::class.java)
+            ?: run {
+                HookProbe.miss(module, "storySeekBarDraw", "onDraw(Canvas) not found")
+                return
+            }
+        hookAfter(module, method, "storySeekBarDraw") { chain ->
+            if (!settings.showSeekbarMarker) return@hookAfter
+            val seekBar = chain.getThisObject() as? View ?: return@hookAfter
+            val contextHash = contextHash(seekBar)
+            val controller = sponsorBlockController ?: return@hookAfter
+            val (durationMs, segments) = controller.progressMarkers(contextHash) ?: return@hookAfter
+            if (segments.isEmpty()) return@hookAfter
+            val geometry = markerBoundsOf(seekBar) ?: return@hookAfter
+            val canvas = chain.getArgs().getOrNull(0) as? Canvas ?: return@hookAfter
+            ProgressMarkerPainter.drawInBounds(
+                canvas,
+                geometry.first,
+                durationMs,
+                segments,
+                settings.categoryColors,
+            )
+            HookProbe.first(module, "storySeekDraw", 3) {
+                "rect=${geometry.first} durationMs=$durationMs segments=${segments.size}"
+            }
+        }
+        HookProbe.ok(module, "storySeekBarDraw", "${seekBarClass.name}#${method.name}(Canvas)")
     }
 
     /**
