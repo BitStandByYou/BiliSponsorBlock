@@ -13,13 +13,13 @@ import java.util.concurrent.TimeUnit
  * 跳过统计存储:累计「已跳过片段数」与「节省时长」,按分类细分。
  *
  * 进程内单例(运行在目标宿主进程,见 [HostTargets.HOST_PACKAGE]):
- *   - controller 在三处跳过点(立即 / 倒计时结束 / 手动点按)调用 [record]。
+ *   - controller 在两处跳过点(自动 / 手动点按)调用 [record]。
  *   - controller 每次进播放页都会被重建,所以计数不能只放在 controller 实例里 ——
  *     这里用进程级单例保证跨视频累计,再持久化到宿主数据目录 JSON 保证跨进程重启存活。
  *   - 设置入口对话框(SponsorBlockSettingDialog)同样跑在宿主进程,直接读这个单例显示。
  *
  * 时长口径:按「片段长度」(endMs-startMs)累计,与其它 SponsorBlock 客户端一致,
- * 而非「从当前位置到片段尾」的实际跳跃量(倒计时模式下二者会差几秒)。
+ * 而非「从当前位置到片段尾」的实际跳跃量。
  *
  * ## 线程模型(首次加载不再卡主线程)
  *

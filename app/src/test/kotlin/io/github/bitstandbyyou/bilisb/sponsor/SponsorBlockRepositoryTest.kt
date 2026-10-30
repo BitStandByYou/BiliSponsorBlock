@@ -1,7 +1,6 @@
 package io.github.bitstandbyyou.bilisb.sponsor
 
 import io.github.bitstandbyyou.bilisb.model.SponsorBlockQuery
-import io.github.bitstandbyyou.bilisb.model.SponsorBlockSubmission
 import io.github.bitstandbyyou.bilisb.model.SponsorSegment
 import io.github.bitstandbyyou.bilisb.net.SponsorBlockApi
 import io.github.bitstandbyyou.bilisb.net.SponsorBlockClient
@@ -174,10 +173,8 @@ class SponsorBlockRepositoryTest {
 
     private class FakeApi(
         val fetchResults: ArrayDeque<SponsorBlockClient.FetchResult> = ArrayDeque(),
-        private val submitResult: SponsorBlockClient.SubmitResult = SponsorBlockClient.SubmitResult(200, null),
     ) : SponsorBlockApi {
         val fetchCalls = mutableListOf<Pair<SponsorBlockQuery, Boolean>>()
-        val submitCalls = mutableListOf<Pair<SponsorBlockSubmission, Boolean>>()
 
         override fun fetchSkipSegments(
             query: SponsorBlockQuery,
@@ -190,12 +187,5 @@ class SponsorBlockRepositoryTest {
                 ?: SponsorBlockClient.FetchResult(200, null, emptyList())
         }
 
-        override fun submitSegment(
-            submission: SponsorBlockSubmission,
-            ignoreCache: Boolean,
-        ): SponsorBlockClient.SubmitResult {
-            submitCalls += submission to ignoreCache
-            return submitResult
-        }
     }
 }

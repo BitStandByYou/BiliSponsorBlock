@@ -1,7 +1,6 @@
 package io.github.bitstandbyyou.bilisb.sponsor
 
 import io.github.bitstandbyyou.bilisb.model.SponsorBlockQuery
-import io.github.bitstandbyyou.bilisb.model.SponsorBlockSubmission
 import io.github.bitstandbyyou.bilisb.model.SponsorBlockConfig
 import io.github.bitstandbyyou.bilisb.model.SponsorSegment
 import io.github.bitstandbyyou.bilisb.net.SponsorBlockClient
@@ -13,10 +12,8 @@ import io.github.bitstandbyyou.bilisb.player.PlayerState
 import io.github.bitstandbyyou.bilisb.settings.SettingsSnapshot
 import io.github.bitstandbyyou.bilisb.ui.PlayerToastBridge
 import io.github.bitstandbyyou.bilisb.ui.ManualSkipButton
-import io.github.bitstandbyyou.bilisb.ui.SkipCountdownOverlay
 import io.github.bitstandbyyou.bilisb.util.AidBvidConverter
 import io.github.bitstandbyyou.bilisb.util.info
-import android.content.Context
 import io.github.libxposed.api.XposedModule
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
@@ -28,24 +25,18 @@ class SponsorBlockController(
     private val module: XposedModule,
     private val settings: SettingsSnapshot = SettingsSnapshot.DEFAULT,
 ) {
-    private val submissionDraftController = SubmissionDraftController()
-
-    // 用 settings 构造 repository(配置服务器地址和启用类别)
+    // 服务器地址与缓存 TTL 不再是设置项:直接用模型与仓库里的固定默认值。
     private val repository = SponsorBlockRepository(
         client = SponsorBlockClient(
             config = SponsorBlockConfig(
-                serverAddress = settings.serverAddress,
                 enabled = settings.enabled,
                 autoSkip = settings.autoSkip,
                 enabledCategories = settings.enabledCategories,
             )
         ),
-        cacheTtlMs = settings.cacheTtlMs,
     )
 
     private val executor = Executors.newSingleThreadExecutor()
-    // 提交与拉取分离:慢提交(405 降级最坏 ~20s)不能把新视频的片段拉取堵在队尾。
-    private val submitExecutor = Executors.newSingleThreadExecutor()
     private val closed = AtomicBoolean(false)
     // 正在拉取中的视频 key,防止 onStart 短时间多次触发导致并发重复请求。
     // 缓存有效期由 repository TTL 控制,过期后这里会清掉允许重拉。
@@ -54,7 +45,6 @@ class SponsorBlockController(
 
     private val latestStateByContext = ConcurrentHashMap<Int, PlayerState>()
     private val latestContainerByContext = ConcurrentHashMap<Int, Any>()
-    private val latestContextByContext = ConcurrentHashMap<Int, Context>()
     private val playerHandles = ConcurrentHashMap<Int, PlayerHandle>()
 
     /**
@@ -68,10 +58,6 @@ class SponsorBlockController(
 
     // 手动模式下当前正在展示跳过按钮的片段 key,用于避免每个进度回调都重设按钮。
     private val manualButtonSegmentKeyByContext = ConcurrentHashMap<Int, String>()
-    // 当前正在倒计时的片段 key(自动跳过倒计时模式),用于离开片段时取消。
-    private val countdownSegmentKeyByContext = ConcurrentHashMap<Int, String>()
-    // 该 context 已解析出的 userID:片段提交复用缓存,避免重复跨进程读取。
-    private val userIdByContext = ConcurrentHashMap<Int, String>()
 
     /**
      * 容器创建时绑定播放器 handle(core 用于 seek,container 用于 toast / context)。
@@ -83,24 +69,19 @@ class SponsorBlockController(
         if (closed.get()) return
         val previous = playerHandles.put(handle.contextHash, handle)
         val previousContainer = latestContainerByContext.put(handle.contextHash, handle.container)
-        latestContextByContext.put(handle.contextHash, handle.context)
         // 全屏重绑同一 context 时不能 resetContextPolicyState:那会清 skipped 桶,片段会被再跳一次。
-        // 仅在首次绑定或 container 换了时,对旧/新 container unmute+hide+cancel,并清 UI 记账。
+        // 仅在首次绑定或 container 换了时,对旧/新 container unmute+hide,并清 UI 记账。
         if (previous == null || previous.container !== handle.container) {
             val oldContainer = previous?.container ?: previousContainer
             if (oldContainer != null) {
                 AudioMuteController.unmute(module, oldContainer, handle.contextHash)
                 ManualSkipButton.hide(module, oldContainer)
-                SkipCountdownOverlay.cancel(module, oldContainer)
             }
             if (handle.container !== oldContainer) {
                 AudioMuteController.unmute(module, handle.container, handle.contextHash)
                 ManualSkipButton.hide(module, handle.container)
-                SkipCountdownOverlay.cancel(module, handle.container)
             }
             manualButtonSegmentKeyByContext.remove(handle.contextHash)
-            countdownSegmentKeyByContext.remove(handle.contextHash)
-            userIdByContext.remove(handle.contextHash)
         }
         module.info("player handle bound context=${handle.contextHash}")
     }
@@ -113,8 +94,8 @@ class SponsorBlockController(
      * 切集时同一 context 会再次回调,按 `bvid:cid` 去重只拉新视频。
      *
      * **切集/换视频时先重置上一集的策略状态**(见 [resetContextPolicyState]):
-     * 新片段还没拉回来的那段时间里,旧视频的静音 / 手动按钮 / 倒计时若继续存活,
-     * 到点会把新视频 seek 到旧片段位置并虚记一次统计。
+     * 新片段还没拉回来的那段时间里,旧视频的静音 / 手动按钮若继续存活,
+     * 会把新视频 seek 到旧片段位置并虚记一次统计。
      */
     fun onVideoIds(contextHash: Int, aid: Long, cid: Long) {
         if (closed.get()) return
@@ -141,25 +122,15 @@ class SponsorBlockController(
             if (container != null) {
                 resetContextPolicyState(contextHash, container)
             }
-            // 过期的提交草稿一并丢弃:用户可能在上一集点了「标记起点」。
-            submissionDraftController.clear(videoKey(previous))
         } else {
             // 重看/循环播放同一视频:onVideoIds 是「播放条目重新就绪」的信号,语义是
             // 「重新开始播放」—— 同一视频从头看也应重新可跳,否则 skippedSegmentsByVideo
-            // 里的 key 会让整个片段在重看时永远不跳/不再弹倒计时。清掉该视频的跳过记录。
+            // 里的 key 会让整个片段在重看时永远不跳。清掉该视频的跳过记录。
             val key = videoKey(state)
             skippedSegmentsByVideo[key]?.clear()
         }
 
         val query = SponsorBlockQuery(state.bvid, state.cid)
-        // userID 预取:settings.userId 非法时,首次提交会在调用线程做跨进程 IPC。
-        // 这里提前到后台线程把 id 解析好缓存住,主线程只剩一次 map 读。
-        if (!UserIdentityStore.isValidUserId(settings.userId)) {
-            executor.execute {
-                runCatching { userIdForContext(contextHash) }
-                    .onFailure { module.info("userId prefetch failed: ${it.message}") }
-            }
-        }
         // 缓存未过期(repository TTL 内)直接复用,不再发起请求。
         if (repository.getCached(query) != null) {
             return
@@ -181,122 +152,9 @@ class SponsorBlockController(
         }
     }
 
-    fun submitSegment(
-        contextHash: Int,
-        startMs: Long,
-        endMs: Long,
-        category: String = "sponsor",
-        epId: Int = 0,
-    ) {
-        if (closed.get()) return
-        val state = latestStateByContext[contextHash] ?: run {
-            module.info("submit skipped: missing player state for context=$contextHash")
-            return
-        }
-        val userId = userIdForContext(contextHash) ?: return
-        val submission = SponsorBlockSubmission(
-            userId = userId,
-            bvid = state.bvid,
-            cid = state.cid,
-            category = category,
-            startMs = startMs,
-            endMs = endMs,
-            videoDurationMs = state.durationMs,
-            epId = epId,
-        )
-        submit(submission, state)
-    }
-
-    fun markOrSubmitCurrentPosition(
-        contextHash: Int,
-        category: String = "sponsor",
-        epId: Int = 0,
-    ) {
-        if (closed.get()) return
-        val state = latestStateByContext[contextHash] ?: run {
-            module.info("mark skipped: missing player state for context=$contextHash")
-            return
-        }
-        val userId = userIdForContext(contextHash) ?: return
-        val positionMs = currentPositionMs(contextHash) ?: state.currentPositionMs
-        val submission = submissionDraftController.markOrBuildSubmission(
-            userId = userId,
-            state = state,
-            positionMs = positionMs,
-            category = category,
-            epId = epId,
-        )
-        if (submission == null) {
-            module.info(
-                "segment mark start video=${state.bvid} cid=${state.cid} " +
-                    "position=$positionMs category=$category",
-            )
-            return
-        }
-        submit(submission, state)
-    }
-
-    fun cancelSubmissionDraft(contextHash: Int) {        if (closed.get()) return
-        val state = latestStateByContext[contextHash] ?: return
-        submissionDraftController.cancel(state)
-        module.info("segment draft canceled video=${state.bvid} cid=${state.cid}")
-    }
-
-    /**
-     * 取该 context 的 userID。
-     *
-     * 优先用设置快照里已有的 32 位 hex userID(设置页可能已经生成/改过),
-     * 避免每次提交都做一次跨进程 `SettingsSyncBridge.readSnapshot` + 磁盘读;
-     * 快照里没有(或格式非法)才落到 [UserIdentityStore],并把结果缓存在 controller 里。
-     */
-    private fun userIdForContext(contextHash: Int): String? {
-        userIdByContext[contextHash]?.let { return it }
-        if (UserIdentityStore.isValidUserId(settings.userId)) {
-            val userId = settings.userId
-            userIdByContext[contextHash] = userId
-            return userId
-        }
-        val context = latestContextByContext[contextHash]
-            ?: latestContainerByContext[contextHash]?.let { PlayerBridge.context(it) as? Context }
-            ?: run {
-                module.info("submit skipped: missing android context for context=$contextHash")
-                return null
-            }
-        val userId = UserIdentityStore(context).getOrCreateUserId()
-        userIdByContext[contextHash] = userId
-        return userId
-    }
-
     private fun currentPositionMs(contextHash: Int): Long? {
         val core = playerHandles[contextHash]?.core ?: return null
         return PlayerActions.currentPositionMs(module, core)
-    }
-
-    private fun submit(submission: SponsorBlockSubmission, state: PlayerState) {
-        if (!submission.isValid) {
-            // 不打整个 submission toString:data class 第一个字段就是 userId(32 位提交凭据),
-            // 明文进日志会随 LSPosed 日志外泄。只打排障所需的非敏感字段。
-            module.info(
-                "submit skipped: invalid submission bvid=${submission.bvid} cid=${submission.cid} " +
-                    "category=${submission.category} start=${submission.startMs} end=${submission.endMs} " +
-                    "duration=${submission.videoDurationMs}",
-            )
-            return
-        }
-
-        submitExecutor.execute {
-            if (closed.get()) return@execute
-            val result = repository.submit(submission)
-            module.info(
-                "segment submitted video=${state.bvid} cid=${state.cid} " +
-                    "status=${result.statusCode} start=${submission.startMs} end=${submission.endMs} " +
-                    "category=${submission.category}",
-            )
-            // 用 client 定义的 isSuccess(2xx),不要只认 200:服务端返回 201/204 时也要清缓存
-            if (result.isSuccess) {
-                repository.clear(SponsorBlockQuery(state.bvid, state.cid))
-            }
-        }
     }
 
     /** 该 context 是否还有播放状态（供 Hook 侧判断要不要补绑）。 */
@@ -332,7 +190,7 @@ class SponsorBlockController(
             skippedSegmentsForVideo(videoKey(state)).clear()
         }
         // 进度文本 hook 的 duration 比 onStart 时刻更准(首帧已就绪),
-        // 持续把非零 duration 与当前位置回填到 state,供进度条标记、提交与回退检测使用。
+        // 持续把非零 duration 与当前位置回填到 state,供进度条标记与回退检测使用。
         // replace 校验 map 里仍是同一个 state:onVideoIds 若已换成新视频则放弃回写,避免串台。
         latestStateByContext.replace(
             contextHash,
@@ -345,19 +203,16 @@ class SponsorBlockController(
         val handle = playerHandles[contextHash] ?: return
 
         // 关键:片段没拉到(cache miss)不再是「直接 return」,而是带着空列表进入下面的
-        // 清理逻辑 —— 否则上一集的静音 / 手动按钮 / 倒计时会一直活着(清理盲区)。
+        // 清理逻辑 —— 否则上一集的静音 / 手动按钮会一直活着(清理盲区)。
         val segments = stateSegments(contextHash, state).orEmpty()
-        // 最小片段时长过滤:短于阈值的片段不跳过、不静音、不显示按钮(避免微小片段抖动)。
-        val minDurationMs = (settings.minSkipDurationSec * 1000).toLong()
         // 时长未知(0)时不参与决策,交给 SkipDecision 直接返回 null。
         val decisionDurationMs = if (durationMs > 0) durationMs else state.durationMs
 
-        // 静音策略(与跳过正交):命中 mute 片段就静音,离开(或没有片段)就取消静音。
+        // 静音策略(片段静音模式):命中 mute 片段就静音,离开(或没有片段)就取消静音。
         if (settings.muteSegments) {
             val muteSeg = SkipDecision.findActiveMuteSegment(
                 positionMs = positionMs,
                 segments = segments,
-                minDurationMs = minDurationMs,
                 durationMs = decisionDurationMs,
             )
             if (muteSeg != null) {
@@ -370,7 +225,6 @@ class SponsorBlockController(
         val segment = SkipDecision.findActiveSkipSegment(
             positionMs = positionMs,
             segments = segments,
-            minDurationMs = minDurationMs,
             durationMs = decisionDurationMs,
         )
 
@@ -412,76 +266,16 @@ class SponsorBlockController(
             return
         }
 
-        // 以下为自动跳过(立即 / 倒计时)。autoSkip 关闭则只剩静音生效,直接返回。
+        // 以下为自动跳过。autoSkip 关闭则只剩静音生效,直接返回。
         if (!settings.autoSkip) {
             return
         }
 
         if (segment == null) {
-            // 离开片段(或本视频还没有片段数据):取消尚在进行的倒计时浮层。
-            val cancelledKey = countdownSegmentKeyByContext.remove(contextHash)
-            if (cancelledKey != null) {
-                SkipCountdownOverlay.cancel(module, handle.container)
-                // 「离开片段」不是用户点取消:把启动倒计时时记下的 skipped 标记回删,
-                // 否则用户拖回片段前再播进来时,该片段既不弹倒计时也不跳过(被永久解除武装)。
-                // 用户主动点「取消」走的是浮层的 onCancel 回调,不经过这里,标记按语义保留。
-                skippedSegmentsForVideo(videoKey(state)).remove(cancelledKey)
-            }
             return
         }
         val skipKey = segmentKey(contextHash, segment)
         val skipped = skippedSegmentsForVideo(videoKey(state))
-
-        // 倒计时模式:进入片段先显示"N秒后跳过 [取消]",倒计时结束才跳。
-        if (settings.skipCountdownSec > 0) {
-            // skippedSegments 去重:倒计时启动即标记,避免每个进度回调重复启动;
-            // 用户取消后保留标记(本片段不再触发),自然结束时也已标记。
-            if (!skipped.add(skipKey)) {
-                return
-            }
-            countdownSegmentKeyByContext[contextHash] = skipKey
-            val categoryName = getCategoryDisplayName(segment.category)
-            val endMs = segment.endMs
-            val startMs = segment.startMs
-            SkipCountdownOverlay.start(
-                module = module,
-                host = handle.container,
-                label = categoryName,
-                // 倒计时不能长过片段本身(否则片段都放完了还在倒数),最多取片段时长的一半。
-                totalMs = countdownTotalMs(settings.skipCountdownSec, startMs, endMs),
-                segmentKey = skipKey,
-                onComplete = {
-                    countdownSegmentKeyByContext.remove(contextHash)
-                    // 复用同一条「已经越过片段尾就放弃」的判定:倒计时期间进度可能已经走完
-                    // 整个片段,这时 seek(endMs) 是往回跳且没有省下时长,不能记统计。
-                    if (!performSkipIfStillValid(contextHash, handle, segment, "countdown", state)) {
-                        val pos = currentPositionMs(contextHash)
-                            ?: latestStateByContext[contextHash]?.currentPositionMs?.takeIf { it > 0L }
-                        if (pos == null || pos < endMs) {
-                            skipped.remove(skipKey)
-                        }
-                        return@start
-                    }
-                    // 统计开关关闭时不累计（面板/设置页的「跳过次数统计」）
-                    if (settings.showSkipStats) SkipStatsStore.record(segment.category, endMs - startMs)
-                    if (settings.showToast) {
-                        val durationSec = (endMs - startMs) / 1000.0
-                        PlayerToastBridge.showSkipToast(
-                            module, handle.container,
-                            String.format(Locale.US, "%s (%.1f秒)", categoryName, durationSec),
-                        )
-                    }
-                },
-                onCancel = {
-                    countdownSegmentKeyByContext.remove(contextHash)
-                },
-            )
-            module.info(
-                "auto-skip countdown started video=${state.bvid} cid=${state.cid} " +
-                    "segment=$startMs-$endMs category=${segment.category} countdown=${settings.skipCountdownSec}s",
-            )
-            return
-        }
 
         // 立即自动跳过。
         if (!skipped.add(skipKey)) {
@@ -555,8 +349,8 @@ class SponsorBlockController(
     }
 
     /**
-     * 切集 / 换容器时的策略状态重置:解除静音、收起手动按钮、取消倒计时、清空两张
-     * key 表,并删掉**上一个视频**的已跳过集合(重新看同一视频时才能再跳过)。
+     * 切集 / 换容器时的策略状态重置:解除静音、收起手动按钮、清空手动按钮 key 表,
+     * 并删掉**上一个视频**的已跳过集合(重新看同一视频时才能再跳过)。
      *
      * 必须在拿到新片段之前执行 —— 这正是「缓存未命中」窗口期旧状态会误伤新视频的地方。
      */
@@ -564,7 +358,7 @@ class SponsorBlockController(
      * 是否切换到了另一个视频（bvid:cid 变化）。
      *
      * 首次拿到 state（previous == null）不算切换；只有真正的换视频/切集才需要重置上一集的
-     * 静音、倒计时、手动按钮与跳过桶，否则会把上一集的状态用到新视频上。
+     * 静音、手动按钮与跳过桶，否则会把上一集的状态用到新视频上。
      */
     private fun isVideoChanged(previous: PlayerState?, current: PlayerState): Boolean {
         if (previous == null) return false
@@ -574,10 +368,7 @@ class SponsorBlockController(
     private fun resetContextPolicyState(contextHash: Int, container: Any) {
         AudioMuteController.unmute(module, container, contextHash)
         ManualSkipButton.hide(module, container)
-        SkipCountdownOverlay.cancel(module, container)
         manualButtonSegmentKeyByContext.remove(contextHash)
-        countdownSegmentKeyByContext.remove(contextHash)
-        userIdByContext.remove(contextHash)
         removeOrphanSkippedBucket(contextHash)
     }
 
@@ -620,7 +411,7 @@ class SponsorBlockController(
         val fresh = repository.getCached(query)
         val last = repository.getLastKnown(query)
         // TTL>0 且新鲜缓存过期时后台重拉;TTL=0 只在进页/手动刷新拉,避免每 tick 打网。
-        if (fresh == null && last != null && settings.cacheTtlMs > 0 && !inFlight.contains(videoKey(state))) {
+        if (fresh == null && last != null && !inFlight.contains(videoKey(state))) {
             scheduleSegmentFetch(videoKey(state), query, false, "segments refetch")
         }
         val cached = fresh ?: last ?: return null
@@ -677,12 +468,6 @@ class SponsorBlockController(
     private fun segmentKey(contextHash: Int, segment: SponsorSegment): String =
         "$contextHash:${segment.uuid}:${segment.startMs}-${segment.endMs}"
 
-    /** 倒计时时长:不超过 settings 配置值,也不超过片段时长的一半。 */
-    private fun countdownTotalMs(configuredSec: Float, startMs: Long, endMs: Long): Long {
-        val configuredMs = (configuredSec * 1000).toLong()
-        return minOf(configuredMs, (endMs - startMs) / 2).coerceAtLeast(1L)
-    }
-
     /**
      * 按 contextHash 清理播放器状态(延迟清理路径专用)。
      *
@@ -699,7 +484,6 @@ class SponsorBlockController(
         if (container != null) {
             AudioMuteController.unmute(module, container, contextHash)
             ManualSkipButton.hide(module, container)
-            SkipCountdownOverlay.cancel(module, container)
         }
         removeContext(contextHash)
     }
@@ -713,7 +497,6 @@ class SponsorBlockController(
             AudioMuteController.unmute(module, host)
         }
         ManualSkipButton.hide(module, host)
-        SkipCountdownOverlay.cancel(module, host)
 
         if (contextHash != 0) {
             removeContext(contextHash)
@@ -736,11 +519,8 @@ class SponsorBlockController(
     private fun removeContext(contextHash: Int) {
         latestStateByContext.remove(contextHash)
         latestContainerByContext.remove(contextHash)
-        latestContextByContext.remove(contextHash)
         playerHandles.remove(contextHash)
         manualButtonSegmentKeyByContext.remove(contextHash)
-        countdownSegmentKeyByContext.remove(contextHash)
-        userIdByContext.remove(contextHash)
         removeOrphanSkippedBucket(contextHash)
     }
 
@@ -754,16 +534,12 @@ class SponsorBlockController(
         if (previous === this || closed.get()) return
         latestStateByContext.putAll(previous.latestStateByContext)
         latestContainerByContext.putAll(previous.latestContainerByContext)
-        latestContextByContext.putAll(previous.latestContextByContext)
         playerHandles.putAll(previous.playerHandles)
-        // 不迁移 manualButton/countdown 两张 key 表:旧 controller close() 时会隐藏按钮、
-        // 取消倒计时浮层(模块级 UI,作用于容器本身),若迁移 key 表,同片段的下个进度回调
-        // 会误判「按钮/浮层已在展示」而不再重设 —— 让下个 tick 自然重现即可。
-        userIdByContext.putAll(previous.userIdByContext)
+        // 不迁移 manualButton key 表:旧 controller close() 时会隐藏按钮(模块级 UI,作用于容器本身),
+        // 若迁移 key 表,同片段的下个进度回调会误判「按钮已在展示」而不再重设 —— 让下个 tick 自然重现即可。
         for ((key, bucket) in previous.skippedSegmentsByVideo) {
             skippedSegmentsByVideo.getOrPut(key) { ConcurrentHashMap.newKeySet() }.addAll(bucket)
         }
-        submissionDraftController.adoptFrom(previous.submissionDraftController)
         // 片段缓存也一并继承:否则重建后 repository 缓存为空,当前视频的片段要等下一次
         // onVideoIds(同一视频内不会来)才重新拉取 —— 期间进度条标记/跳过全部消失。
         repository.transferCacheFrom(previous.repository)
@@ -791,26 +567,20 @@ class SponsorBlockController(
     fun close() {
         if (!closed.compareAndSet(false, true)) return
         // 关闭前先把挂在播放器上的策略 UI/音频状态清干净:否则总开关一关,
-        // 静音记账与倒计时浮层没有人管 —— STREAM_MUSIC 的静音会跨 App 泄漏,
-        // 倒计时到点还会照常 seek + 记统计(模块"已关闭"却仍在改宿主播放器)。
+        // 静音记账没有人管 —— STREAM_MUSIC 的静音会跨 App 泄漏。
         for ((hash, container) in latestContainerByContext) {
             AudioMuteController.unmute(module, container, hash)
             ManualSkipButton.hide(module, container)
-            SkipCountdownOverlay.cancel(module, container)
         }
         inFlight.clear()
         fetchGeneration.clear()
         latestStateByContext.clear()
         latestContainerByContext.clear()
-        latestContextByContext.clear()
         playerHandles.clear()
         skippedSegmentsByVideo.clear()
         sanitizedCache.clear()
         manualButtonSegmentKeyByContext.clear()
-        countdownSegmentKeyByContext.clear()
-        userIdByContext.clear()
         executor.shutdownNow()
-        submitExecutor.shutdownNow()
         repository.close()
     }
 

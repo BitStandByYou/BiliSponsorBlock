@@ -8,6 +8,7 @@ import android.view.View
 import io.github.bitstandbyyou.bilisb.host.HookProbe
 import io.github.bitstandbyyou.bilisb.host.HostTargets
 import io.github.bitstandbyyou.bilisb.host.ResolvedTargets
+import io.github.bitstandbyyou.bilisb.model.SponsorBlockConfig
 import io.github.bitstandbyyou.bilisb.settings.SettingsKeys
 import io.github.bitstandbyyou.bilisb.sponsor.FullVideoLabel
 import io.github.bitstandbyyou.bilisb.sponsor.FullVideoLabelLookup
@@ -77,7 +78,7 @@ object DynamicFullVideoAdFilter {
                         aid = aid ?: return@runCatching,
                         dynamicId = dynamicId,
                         bvid = bvid,
-                        serverAddress = readServerAddress(prefs),
+                        serverAddress = SponsorBlockConfig.DEFAULT_SERVER_ADDRESS,
                     )
                     synchronized(lock) { boundCards[root] = bound }
                     checkCard(root, bound, prefs, module)
@@ -161,9 +162,6 @@ object DynamicFullVideoAdFilter {
         prefs.getBoolean(SettingsKeys.ENABLED, true) &&
             prefs.getBoolean(SettingsKeys.HIDE_FULL_VIDEO_LABEL_CARDS, true)
 
-    private fun readServerAddress(prefs: SharedPreferences): String =
-        prefs.getString(SettingsKeys.SERVER_ADDRESS, SettingsKeys.DEFAULT_SERVER)
-            ?.takeIf { it.isNotBlank() } ?: SettingsKeys.DEFAULT_SERVER
 
     private fun dynamicIdFor(model: Any): Long? = runCatching {
         val root = model.javaClass.getMethod(ResolvedTargets.effectiveDynamicPostRootMethodName).invoke(model)

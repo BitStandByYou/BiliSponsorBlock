@@ -4,40 +4,21 @@ import android.content.SharedPreferences
 import android.os.Bundle
 import org.json.JSONObject
 
+/**
+ * 设置快照的编解码:SharedPreferences / Bundle(Provider IPC)/ JSON(镜像文件)三条通道共用。
+ *
+ * **只处理用户能改的设置**(见 [SettingsKeys] 的类注释)。服务器地址、缓存 TTL、最小片段时长、
+ * 自动跳过倒计时、标记颜色都不再读取 prefs —— 它们固定为代码里的默认值,历史残留键一律忽略,
+ * 这样"界面上没有的开关"不会在后台偷偷生效。
+ */
 object SettingsCodec {
     fun snapshotFromPreferences(prefs: SharedPreferences): SettingsSnapshot {
-        return SettingsSnapshot(
-            enabled = prefs.getBoolean(SettingsKeys.ENABLED, true),
+        return assemble(
             autoSkip = prefs.getBoolean(SettingsKeys.AUTO_SKIP, true),
             manualSkip = prefs.getBoolean(SettingsKeys.MANUAL_SKIP, false),
             muteSegments = prefs.getBoolean(SettingsKeys.MUTE_SEGMENTS, false),
-            minSkipDurationSec = parseDuration(
-                prefs.getString(SettingsKeys.MIN_SKIP_DURATION, "0"),
-                SettingsKeys.MAX_MIN_SKIP_DURATION_SECONDS,
-            ),
-            skipCountdownSec = parseDuration(
-                prefs.getString(SettingsKeys.SKIP_COUNTDOWN, "0"),
-                SettingsKeys.MAX_SKIP_COUNTDOWN_SECONDS,
-            ),
-            serverAddress = SettingsSanitizer.sanitizeServerAddress(
-                prefs.getString(SettingsKeys.SERVER_ADDRESS, SettingsKeys.DEFAULT_SERVER),
-                SettingsKeys.DEFAULT_SERVER,
-            ),
-            cacheTtlMs = parseCacheTtlMs(prefs.getString(SettingsKeys.CACHE_TTL_MINUTES, SettingsKeys.DEFAULT_CACHE_TTL_MINUTES)),
-            userId = SettingsSanitizer.sanitizeUserId(prefs.getString(SettingsKeys.USER_ID, ""), ""),
-            defaultSubmitCategory = sanitizeCategory(
-                prefs.getString(SettingsKeys.DEFAULT_SUBMIT_CATEGORY, SettingsKeys.DEFAULT_SUBMIT_CATEGORY_VALUE),
-            ),
-            enabledCategories = enabledCategoriesFromPrefs(prefs::getBoolean),
-            showToast = prefs.getBoolean(SettingsKeys.SHOW_TOAST, true),
-            showSeekbarMarker = prefs.getBoolean(SettingsKeys.SHOW_SEEKBAR_MARKER, true),
-            showTimeDeduction = prefs.getBoolean(SettingsKeys.SHOW_TIME_DEDUCTION, true),
-            showSkipStats = prefs.getBoolean(SettingsKeys.SHOW_SKIP_STATS, true),
-            showSubmitButton = prefs.getBoolean(SettingsKeys.SHOW_SUBMIT_BUTTON, true),
-            hideFullVideoLabelCards = prefs.getBoolean(SettingsKeys.HIDE_FULL_VIDEO_LABEL_CARDS, true),
-            categoryColors = SettingsKeys.CATEGORY_COLOR_DEFAULTS.mapValues { (category, def) ->
-                parseColor(prefs.getString(SettingsKeys.colorKey(category), def), def)
-            },
+            enabled = prefs.getBoolean(SettingsKeys.ENABLED, true),
+            reader = prefs::getBoolean,
         )
     }
 
@@ -46,20 +27,16 @@ object SettingsCodec {
      *
      * 为什么用 Map 中转:JVM 单测里 `android.os.Bundle` 全是 stub(没有 Robolectric),
      * 折叠之后「整对象等价」的往返测试可以在无 Android 环境下覆盖全部字段。
-     * 数值统一用字符串(与 Bundle / JSON 的持久化形态一致),颜色统一 `#RRGGBB`(裁掉 alpha)。
      */
     fun snapshotToMap(snapshot: SettingsSnapshot): Map<String, Any> {
+        // 快照可能由旧配置构造而来,写出前再归一一次,保证镜像 / IPC 里始终是互斥三元组。
+        val mode = SkipMode.fromFlags(snapshot.autoSkip, snapshot.manualSkip, snapshot.muteSegments)
+        val (autoSkip, manualSkip, muteSegments) = mode.toFlags()
         return linkedMapOf<String, Any>().apply {
             put(SettingsKeys.ENABLED, snapshot.enabled)
-            put(SettingsKeys.AUTO_SKIP, snapshot.autoSkip)
-            put(SettingsKeys.MANUAL_SKIP, snapshot.manualSkip)
-            put(SettingsKeys.MUTE_SEGMENTS, snapshot.muteSegments)
-            put(SettingsKeys.MIN_SKIP_DURATION, snapshot.minSkipDurationSec.toString())
-            put(SettingsKeys.SKIP_COUNTDOWN, snapshot.skipCountdownSec.toString())
-            put(SettingsKeys.SERVER_ADDRESS, snapshot.serverAddress)
-            put(SettingsKeys.CACHE_TTL_MINUTES, formatMinutes(snapshot.cacheTtlMs))
-            put(SettingsKeys.USER_ID, snapshot.userId)
-            put(SettingsKeys.DEFAULT_SUBMIT_CATEGORY, snapshot.defaultSubmitCategory)
+            put(SettingsKeys.AUTO_SKIP, autoSkip)
+            put(SettingsKeys.MANUAL_SKIP, manualSkip)
+            put(SettingsKeys.MUTE_SEGMENTS, muteSegments)
             SettingsKeys.CATEGORY_MAP.forEach { (key, category) ->
                 put(key, snapshot.enabledCategories.contains(category))
             }
@@ -67,11 +44,7 @@ object SettingsCodec {
             put(SettingsKeys.SHOW_SEEKBAR_MARKER, snapshot.showSeekbarMarker)
             put(SettingsKeys.SHOW_TIME_DEDUCTION, snapshot.showTimeDeduction)
             put(SettingsKeys.SHOW_SKIP_STATS, snapshot.showSkipStats)
-            put(SettingsKeys.SHOW_SUBMIT_BUTTON, snapshot.showSubmitButton)
             put(SettingsKeys.HIDE_FULL_VIDEO_LABEL_CARDS, snapshot.hideFullVideoLabelCards)
-            SettingsKeys.CATEGORY_COLOR_DEFAULTS.forEach { (category, def) ->
-                put(SettingsKeys.colorKey(category), snapshot.categoryColors[category]?.let(::toHex) ?: def)
-            }
         }
     }
 
@@ -79,7 +52,7 @@ object SettingsCodec {
      * 从 Map 还原快照。
      *
      * 字段级容错(JSON 镜像可能是半截内容或被外部改写):单个字段出错只影响该字段,
-     * 退回它的默认值,其余字段照常解析。布尔/字符串都要求类型严格匹配,不做隐式强转
+     * 退回它的默认值,其余字段照常解析。布尔要求类型严格匹配,不做隐式强转
      * (`"enabled": 1` 这类脏数据不会被当成 true 用)。
      */
     fun snapshotFromMap(values: Map<String, Any?>): SettingsSnapshot {
@@ -87,40 +60,13 @@ object SettingsCodec {
             runCatching { values[key]?.let(cast) }.getOrNull() ?: default
 
         fun bool(key: String, default: Boolean) = field(key, default) { it as? Boolean }
-        fun str(key: String, default: String) = field(key, default) { it as? String }
 
-        return SettingsSnapshot(
-            enabled = bool(SettingsKeys.ENABLED, true),
+        return assemble(
             autoSkip = bool(SettingsKeys.AUTO_SKIP, true),
             manualSkip = bool(SettingsKeys.MANUAL_SKIP, false),
             muteSegments = bool(SettingsKeys.MUTE_SEGMENTS, false),
-            minSkipDurationSec = parseDuration(
-                str(SettingsKeys.MIN_SKIP_DURATION, "0"),
-                SettingsKeys.MAX_MIN_SKIP_DURATION_SECONDS,
-            ),
-            skipCountdownSec = parseDuration(
-                str(SettingsKeys.SKIP_COUNTDOWN, "0"),
-                SettingsKeys.MAX_SKIP_COUNTDOWN_SECONDS,
-            ),
-            serverAddress = SettingsSanitizer.sanitizeServerAddress(
-                str(SettingsKeys.SERVER_ADDRESS, SettingsKeys.DEFAULT_SERVER),
-                SettingsKeys.DEFAULT_SERVER,
-            ),
-            cacheTtlMs = parseCacheTtlMs(str(SettingsKeys.CACHE_TTL_MINUTES, SettingsKeys.DEFAULT_CACHE_TTL_MINUTES)),
-            userId = SettingsSanitizer.sanitizeUserId(str(SettingsKeys.USER_ID, ""), ""),
-            defaultSubmitCategory = sanitizeCategory(
-                str(SettingsKeys.DEFAULT_SUBMIT_CATEGORY, SettingsKeys.DEFAULT_SUBMIT_CATEGORY_VALUE),
-            ),
-            enabledCategories = enabledCategoriesFromPrefs(::bool),
-            showToast = bool(SettingsKeys.SHOW_TOAST, true),
-            showSeekbarMarker = bool(SettingsKeys.SHOW_SEEKBAR_MARKER, true),
-            showTimeDeduction = bool(SettingsKeys.SHOW_TIME_DEDUCTION, true),
-            showSkipStats = bool(SettingsKeys.SHOW_SKIP_STATS, true),
-            showSubmitButton = bool(SettingsKeys.SHOW_SUBMIT_BUTTON, true),
-            hideFullVideoLabelCards = bool(SettingsKeys.HIDE_FULL_VIDEO_LABEL_CARDS, true),
-            categoryColors = SettingsKeys.CATEGORY_COLOR_DEFAULTS.mapValues { (category, def) ->
-                parseColor(str(SettingsKeys.colorKey(category), def), def)
-            },
+            enabled = bool(SettingsKeys.ENABLED, true),
+            reader = ::bool,
         )
     }
 
@@ -145,7 +91,7 @@ object SettingsCodec {
     fun snapshotToBundle(snapshot: SettingsSnapshot): Bundle {
         return Bundle().apply {
             snapshotToMap(snapshot).forEach { (key, value) ->
-                // 与旧形态保持一致:数值以字符串写入 Bundle,避免跨进程 Bundle 类型漂移
+                // 与旧形态保持一致:布尔写 Boolean,避免跨进程 Bundle 类型漂移
                 if (value is Boolean) putBoolean(key, value) else putString(key, value.toString())
             }
         }
@@ -164,74 +110,41 @@ object SettingsCodec {
         autoSkip = true,
         manualSkip = false,
         muteSegments = false,
-        minSkipDurationSec = 0f,
-        skipCountdownSec = 0f,
-        serverAddress = SettingsKeys.DEFAULT_SERVER,
-        cacheTtlMs = 60L * 60_000L,
-        userId = "",
-        defaultSubmitCategory = SettingsKeys.DEFAULT_SUBMIT_CATEGORY_VALUE,
         enabledCategories = SettingsKeys.CATEGORY_MAP.values.toSet(),
         showToast = true,
         showSeekbarMarker = true,
         showTimeDeduction = true,
         showSkipStats = true,
-        showSubmitButton = true,
         hideFullVideoLabelCards = true,
-        categoryColors = SettingsKeys.CATEGORY_COLOR_DEFAULTS.mapValues { (_, hex) -> parseColor(hex, "#808080") },
     )
 
-    private fun enabledCategoriesFromPrefs(reader: (String, Boolean) -> Boolean): Set<String> {
-        return SettingsKeys.CATEGORY_MAP.filter { (key, _) ->
-            reader(key, true)
-        }.values.toSet()
-    }
-
-    private fun parseColor(hex: String?, default: String): Int =
-        parseHexColor(hex) ?: parseHexColor(default) ?: 0xFF808080.toInt()
-
-    /** 时长解析:非数值/NaN/无穷一律按 0,并 clamp 到 [0, maxSeconds]。 */
-    private fun parseDuration(raw: String?, maxSeconds: Float): Float {
-        val value = raw?.trim()?.toFloatOrNull() ?: return 0f
-        if (!value.isFinite()) return 0f
-        return value.coerceIn(0f, maxSeconds)
-    }
-
-    /** 缓存 TTL 解析(分钟 → 毫秒):非法值退回 60 分钟,并 clamp 到 [0, MAX_CACHE_TTL_MINUTES]。 */
-    private fun parseCacheTtlMs(raw: String?): Long {
-        val parsed = raw?.trim()?.toFloatOrNull()?.takeIf { it.isFinite() }
-        val minutes = parsed?.coerceIn(0f, SettingsKeys.MAX_CACHE_TTL_MINUTES.toFloat()) ?: 60f
-        return (minutes * 60_000L).toLong()
-    }
-
-    private fun formatMinutes(cacheTtlMs: Long): String {
-        val minutes = cacheTtlMs / 60_000.0
-        return if (minutes % 1.0 == 0.0) {
-            minutes.toLong().toString()
-        } else {
-            val raw = minutes.toString()
-            raw.trimEnd('0').trimEnd('.')
-        }
-    }
-
-    private fun sanitizeCategory(raw: String?): String {
-        val category = raw?.trim().orEmpty()
-        return if (category in io.github.bitstandbyyou.bilisb.model.SponsorCategories.displayNames) {
-            category
-        } else {
-            SettingsKeys.DEFAULT_SUBMIT_CATEGORY_VALUE
-        }
-    }
-
-    private fun toHex(color: Int): String = String.format("#%06X", 0xFFFFFF and color)
-
-    private fun parseHexColor(raw: String?): Int? {
-        val normalized = raw?.trim().orEmpty()
-        if (normalized.isEmpty()) return null
-        val value = normalized.removePrefix("#")
-        return when (value.length) {
-            6 -> value.toLongOrNull(16)?.let { (0xFF000000 or it).toInt() }
-            8 -> value.toLongOrNull(16)?.toInt()
-            else -> null
-        }
+    /**
+     * 三条通道的公共装配点:先把三键归一成唯一模式,再填其余字段。
+     *
+     * @param reader 按 key 读布尔的读取器(prefs / Map 各一套)
+     */
+    private fun assemble(
+        autoSkip: Boolean,
+        manualSkip: Boolean,
+        muteSegments: Boolean,
+        enabled: Boolean,
+        reader: (String, Boolean) -> Boolean,
+    ): SettingsSnapshot {
+        val mode = SkipMode.fromFlags(autoSkip, manualSkip, muteSegments)
+        val (normalizedAuto, normalizedManual, normalizedMute) = mode.toFlags()
+        return SettingsSnapshot(
+            enabled = enabled,
+            autoSkip = normalizedAuto,
+            manualSkip = normalizedManual,
+            muteSegments = normalizedMute,
+            enabledCategories = SettingsKeys.CATEGORY_MAP.filter { (key, _) ->
+                reader(key, true)
+            }.values.toSet(),
+            showToast = reader(SettingsKeys.SHOW_TOAST, true),
+            showSeekbarMarker = reader(SettingsKeys.SHOW_SEEKBAR_MARKER, true),
+            showTimeDeduction = reader(SettingsKeys.SHOW_TIME_DEDUCTION, true),
+            showSkipStats = reader(SettingsKeys.SHOW_SKIP_STATS, true),
+            hideFullVideoLabelCards = reader(SettingsKeys.HIDE_FULL_VIDEO_LABEL_CARDS, true),
+        )
     }
 }

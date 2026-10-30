@@ -360,7 +360,6 @@ object BiliSponsorBlockHooks {
                 geometry.first,
                 durationMs,
                 segments,
-                settings.categoryColors,
             )
             HookProbe.first(module, "storySeekDraw", 3) {
                 "rect=${geometry.first} durationMs=$durationMs segments=${segments.size}"
@@ -615,8 +614,8 @@ object BiliSponsorBlockHooks {
         // 会导致除总开关外的所有设置改动都不生效（只有重建 controller 才会带上新配置）。
         module.info(
             "Settings snapshot on player enter: enabled=${freshSettings.enabled} " +
-                "autoSkip=${freshSettings.autoSkip} server=${freshSettings.serverAddress} " +
-                "userId=${redactUserId(freshSettings.userId)}",
+                "autoSkip=${freshSettings.autoSkip} manualSkip=${freshSettings.manualSkip} " +
+                "muteSegments=${freshSettings.muteSegments}",
         )
         applySnapshot(module, freshSettings, source = "player enter")
     }
@@ -652,9 +651,6 @@ object BiliSponsorBlockHooks {
             module.info("SponsorBlock controller reused ($source)")
         }
     }
-
-    private fun redactUserId(userId: String): String =
-        if (userId.isEmpty()) "-" else userId.take(4) + "…"
 
     // ------------------------------------------------------------------ 进度回调
 
@@ -818,13 +814,12 @@ object BiliSponsorBlockHooks {
             return null
         }
 
-        // 扣减口径必须与实际跳过策略一致：用同一个最小片段阈值过滤，
-        // 且自动/手动跳过都关闭时不做扣减（否则会显示"剩余 xx"但实际没省那么多）。
+        // 扣减口径必须与实际跳过策略一致：自动/手动跳过都关闭（片段静音模式）时不做扣减，
+        // 否则会显示"剩余 xx"但实际没省那么多。
         val skipEnabled = settings.autoSkip || settings.manualSkip
         val adjustedDurationMs = RemainingTimeFormatter.adjustedDuration(
             durationMs,
             segments,
-            minSkipDurationMs = (settings.minSkipDurationSec * 1000).toLong(),
             skipEnabled = skipEnabled,
         )
         if (adjustedDurationMs >= durationMs) {
@@ -944,7 +939,6 @@ object BiliSponsorBlockHooks {
                     geometry.first,
                     durationMs,
                     segments,
-                    settings.categoryColors,
                 )
             }
             hooked++

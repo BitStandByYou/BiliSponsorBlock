@@ -9,6 +9,10 @@ package io.github.bitstandbyyou.bilisb.settings
  *   1) ContentProvider IPC (权威存储,模块进程存活时)
  *   2) JSON 镜像文件 (模块进程已退出/被系统拦截时)
  *   3) 默认值
+ *
+ * **这里只放"用户能改"的设置**。服务器地址、缓存 TTL、最小片段时长、自动跳过倒计时、
+ * 标记颜色都不再是设置项:它们固定为代码里的默认值(见 [SettingsCodec])，prefs 里的历史残留键
+ * 不参与读取。提交功能已移除,用户 ID / 默认提交类别等键也一并没有。
  */
 object SettingsKeys {
     const val PREFS_NAME = "sponsorblock_settings"
@@ -20,39 +24,20 @@ object SettingsKeys {
 
     // 总开关
     const val ENABLED = "enabled"
+
+    /**
+     * 跳过方式三选一,由三个互斥布尔表示(旧版本三键独立勾选,读取时统一归一成单选):
+     *   - auto_skip: 自动跳过
+     *   - manual_skip: 手动跳过(片段内显示按钮)
+     *   - mute_segments: 片段静音(只静音 mute 类片段,不跳过)
+     * 归一规则见 [SkipMode.fromFlags];写入时三者恰好一个为 true。
+     */
     const val AUTO_SKIP = "auto_skip"
-
-    // 跳过策略
-    // manual_skip: 开启后不自动跳过,改为在片段内显示"跳过"按钮,由用户点按跳过。
     const val MANUAL_SKIP = "manual_skip"
-    // min_skip_duration: 最小片段时长(秒,可带小数)。短于此值的片段不跳过/不显示按钮。"0" = 不过滤。
-    const val MIN_SKIP_DURATION = "min_skip_duration"
-    // mute_segments: 对 actionType=mute 的片段静音(而非跳过)。默认关闭(对齐原 APK 未实现 mute)。
     const val MUTE_SEGMENTS = "mute_segments"
-    // skip_countdown: 自动跳过倒计时(秒)。>0 时进入片段先显示"N秒后跳过 [取消]",倒计时结束才跳。"0" = 立即跳。
-    const val SKIP_COUNTDOWN = "skip_countdown"
 
-    // 服务器
-    const val SERVER_ADDRESS = "server_address"
-
-    /** 默认服务器引用 SponsorBlockConfig 的单一来源,避免两处字面量漂移。 */
-    const val DEFAULT_SERVER = io.github.bitstandbyyou.bilisb.model.SponsorBlockConfig.DEFAULT_SERVER_ADDRESS
-    const val CACHE_TTL_MINUTES = "cache_ttl_minutes"
-    const val DEFAULT_CACHE_TTL_MINUTES = "60"
-    // 数值字段合法区间:入参(IPC / JSON 镜像)不可信,统一 clamp,例如 cache_ttl_minutes 传 1e38。
-    /** 缓存 TTL 上限(分钟,7 天)。 */
-    const val MAX_CACHE_TTL_MINUTES = 10_080
-    /** 最小片段时长上限(秒,1 小时)。 */
-    const val MAX_MIN_SKIP_DURATION_SECONDS = 3_600f
-    /** 自动跳过倒计时上限(秒,10 分钟)。 */
-    const val MAX_SKIP_COUNTDOWN_SECONDS = 600f
     /** 镜像 / 统计 JSON 读取上限,超出视为损坏。 */
     const val MAX_LOCAL_FILE_BYTES = 256 * 1024
-
-    // 提交配置
-    const val USER_ID = "user_id"
-    const val DEFAULT_SUBMIT_CATEGORY = "default_submit_category"
-    const val DEFAULT_SUBMIT_CATEGORY_VALUE = "sponsor"
 
     // 类别开关 (每个类别一个 bool)
     const val CAT_SPONSOR = "cat_sponsor"
@@ -72,26 +57,9 @@ object SettingsKeys {
 
     // 是否记录/展示跳过统计（设置页的「跳过次数统计」开关）
     const val SHOW_SKIP_STATS = "show_skip_stats"
-    const val SHOW_SUBMIT_BUTTON = "show_submit_button"
+
     /** 首页推荐隐藏整段推广卡片；播放页更多视频仅隐藏整段广告卡片。 */
     const val HIDE_FULL_VIDEO_LABEL_CARDS = "hide_full_video_label_cards"
-
-    // 分类标记颜色:key 为 "color_<category>",值为 "#RRGGBB" hex 字符串。
-    const val COLOR_PREFIX = "color_"
-    fun colorKey(category: String): String = COLOR_PREFIX + category
-
-    /** 类别 → 默认标记颜色(hex)。与 ProgressMarkerPainter 内置配色一致。保序用于 UI 展示。 */
-    val CATEGORY_COLOR_DEFAULTS: Map<String, String> = linkedMapOf(
-        "sponsor" to "#00D200",         // 绿色
-        "selfpromo" to "#FFFF00",       // 黄色
-        "interaction" to "#AA00FF",     // 紫色
-        "intro" to "#00FFFF",           // 青色
-        "outro" to "#0064FF",           // 蓝色
-        "preview" to "#FF8000",         // 橙色
-        "music_offtopic" to "#FF00B4",  // 粉色
-        "filler" to "#7F00FF",          // 深紫
-        io.github.bitstandbyyou.bilisb.model.SponsorCategories.POI_HIGHLIGHT to "#FF1E1E",   // 红色
-    )
 
     /** 类别 key → SponsorBlock category 字符串 */
     val CATEGORY_MAP = mapOf(
@@ -105,5 +73,4 @@ object SettingsKeys {
         CAT_FILLER to "filler",
         CAT_POI_HIGHLIGHT to io.github.bitstandbyyou.bilisb.model.SponsorCategories.POI_HIGHLIGHT,
     )
-
 }

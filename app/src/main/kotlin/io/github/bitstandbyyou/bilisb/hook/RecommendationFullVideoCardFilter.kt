@@ -9,6 +9,7 @@ import android.view.View
 import io.github.bitstandbyyou.bilisb.host.HostTargets
 import io.github.bitstandbyyou.bilisb.host.HookProbe
 import io.github.bitstandbyyou.bilisb.host.HookResolve
+import io.github.bitstandbyyou.bilisb.model.SponsorBlockConfig
 import io.github.bitstandbyyou.bilisb.settings.SettingsKeys
 import io.github.bitstandbyyou.bilisb.sponsor.FullVideoLabelLookup
 import io.github.bitstandbyyou.bilisb.util.AidBvidConverter
@@ -113,7 +114,7 @@ object RecommendationFullVideoCardFilter {
             synchronized(lock) { boundCards.remove(holder) }
             return
         }
-        val serverAddress = readServerAddress(prefs)
+        val serverAddress = SponsorBlockConfig.DEFAULT_SERVER_ADDRESS
         val previous = synchronized(lock) { boundCards[holder] }
         if (previous?.item?.get() === item && previous.adapter.get() === adapter && previous.fragment.get() === fragment &&
             previous.view.get() === view && previous.bvid == bvid && previous.serverAddress == serverAddress
@@ -276,9 +277,6 @@ object RecommendationFullVideoCardFilter {
         return field(target, fieldName)
     }
 
-    private fun readServerAddress(prefs: SharedPreferences): String =
-        prefs.getString(SettingsKeys.SERVER_ADDRESS, SettingsKeys.DEFAULT_SERVER)
-            ?.takeIf { it.isNotBlank() } ?: SettingsKeys.DEFAULT_SERVER
 
     private fun shouldHideCards(prefs: SharedPreferences): Boolean =
         prefs.getBoolean(SettingsKeys.ENABLED, true) &&

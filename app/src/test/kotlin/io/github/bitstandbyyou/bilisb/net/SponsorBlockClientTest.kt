@@ -1,10 +1,8 @@
 package io.github.bitstandbyyou.bilisb.net
 
 import io.github.bitstandbyyou.bilisb.model.SponsorBlockConfig
-import io.github.bitstandbyyou.bilisb.model.SponsorBlockSubmission
 import java.net.MalformedURLException
 import java.net.SocketTimeoutException
-import java.net.URLEncoder
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -180,59 +178,14 @@ class SponsorBlockClientTest {
         assertEquals(listOf("first-bucket"), segments.map { it.uuid })
     }
 
-    @Test
-    fun buildSubmitUrlKeepsLegacyGetShapeAndEncodesValues() {
-        val url = client.buildSubmitUrl(
-            submission(userId = "user 1", category = "a b&c=d", epId = 88),
-        )
 
-        assertTrue(url.startsWith("https://bsbsb.top/api/skipSegments?"))
-        assertTrue(url.contains("userID=user+1"))
-        assertTrue(url.contains("videoID=BV14741127BN"))
-        assertTrue(url.contains("cid=123"))
-        assertTrue(url.contains("category=a+b%26c%3Dd"))
-        assertTrue(url.contains("startTime=15.000"))
-        assertTrue(url.contains("endTime=20.000"))
-        assertTrue(url.contains("videoDuration=60.000"))
-        assertTrue(url.contains("epId=88"))
-    }
 
-    @Test
-    fun buildSubmitBodyCarriesOfficialPostFieldsAndEncodesValues() {
-        val category = "赞助 & 广告=测试"
-        val body = client.buildSubmitBody(submission(userId = "user 1", category = category))
-
-        assertTrue(body.startsWith("userID=user+1&"))
-        assertTrue(body.contains("&userAgent=BiliSponsorBlock%2F1.0+%28LSPosed%29&"))
-        assertTrue(body.contains("&videoID=BV14741127BN&"))
-        assertTrue(body.contains("&cid=123&"))
-        assertTrue(body.contains("&actionType=skip&"))
-        assertTrue(body.contains("&startTime=15.000&"))
-        assertTrue(body.contains("&endTime=20.000&"))
-        assertTrue(body.contains("&videoDuration=60.000&"))
-        assertTrue(body.contains("&service=bilibili"))
-        assertFalse(body.contains("epId="))
-        // 中文/空格/&/= 必须 percent-encode,不能原样出现。
-        assertFalse(body.contains("赞助"))
-        assertTrue(body.contains("category=" + URLEncoder.encode(category, "UTF-8")))
-    }
-
-    @Test
-    fun buildSubmitBodyOmitsCidAndAppendsEpIdWhenPresent() {
-        assertFalse(client.buildSubmitBody(submission(cid = 0L)).contains("cid="))
-        assertTrue(client.buildSubmitBody(submission(epId = 88)).contains("&epId=88"))
-    }
 
     @Test
     fun anyTwoHundredStatusCountsAsSuccess() {
         assertTrue(SponsorBlockClient.FetchResult(200, null, emptyList()).isSuccess)
         assertTrue(SponsorBlockClient.FetchResult(299, null, emptyList()).isSuccess)
         assertFalse(SponsorBlockClient.FetchResult(404, null, emptyList()).isSuccess)
-        assertTrue(SponsorBlockClient.SubmitResult(200, null).isSuccess)
-        assertTrue(SponsorBlockClient.SubmitResult(201, null).isSuccess)
-        assertFalse(SponsorBlockClient.SubmitResult(405, null).isSuccess)
-        // 默认方法为 POST,新增字段不能破坏原有 2 参数构造。
-        assertEquals("POST", SponsorBlockClient.SubmitResult(200, null).method)
     }
 
     @Test
@@ -301,23 +254,4 @@ class SponsorBlockClientTest {
         }
     }
 
-    private fun submission(
-        userId: String = "user-1",
-        bvid: String = "BV14741127BN",
-        cid: Long = 123L,
-        category: String = "sponsor",
-        startMs: Long = 15_000L,
-        endMs: Long = 20_000L,
-        videoDurationMs: Long = 60_000L,
-        epId: Int = 0,
-    ) = SponsorBlockSubmission(
-        userId = userId,
-        bvid = bvid,
-        cid = cid,
-        category = category,
-        startMs = startMs,
-        endMs = endMs,
-        videoDurationMs = videoDurationMs,
-        epId = epId,
-    )
 }

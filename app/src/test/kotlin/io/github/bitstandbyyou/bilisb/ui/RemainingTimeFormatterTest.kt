@@ -21,41 +21,12 @@ class RemainingTimeFormatterTest {
     }
 
     @Test
-    fun filtersSegmentsShorterThanMinSkipDuration() {
-        val segments = listOf(
-            segment("sponsor", "skip", 10_000L, 20_000L),   // 10s：不满足阈值
-            segment("intro", "skip", 30_000L, 40_000L),     // 10s：不满足阈值
-        )
-
-        // 阈值 15s：两段都太短，实际不会跳过 → 剩余时长不变
-        assertEquals(
-            300_000L,
-            RemainingTimeFormatter.adjustedDuration(300_000L, segments, minSkipDurationMs = 15_000L),
-        )
-        // 阈值 10s：两段都达标，扣满 20s
-        assertEquals(
-            280_000L,
-            RemainingTimeFormatter.adjustedDuration(300_000L, segments, minSkipDurationMs = 10_000L),
-        )
-    }
-
-    @Test
     fun keepsDurationWhenSkipIsDisabled() {
         val segments = listOf(segment("sponsor", "skip", 10_000L, 20_000L))
 
         assertEquals(
             300_000L,
             RemainingTimeFormatter.adjustedDuration(300_000L, segments, skipEnabled = false),
-        )
-        // 关闭跳过时连阈值也不该起作用
-        assertEquals(
-            300_000L,
-            RemainingTimeFormatter.adjustedDuration(
-                300_000L,
-                segments,
-                minSkipDurationMs = 1_000L,
-                skipEnabled = false,
-            ),
         )
     }
 
@@ -65,10 +36,6 @@ class RemainingTimeFormatterTest {
 
         assertEquals(0L, RemainingTimeFormatter.adjustedDuration(0L, segments))
         assertEquals(-5_000L, RemainingTimeFormatter.adjustedDuration(-5_000L, segments))
-        assertEquals(
-            -5_000L,
-            RemainingTimeFormatter.adjustedDuration(-5_000L, segments, minSkipDurationMs = 1_000L),
-        )
     }
 
     @Test

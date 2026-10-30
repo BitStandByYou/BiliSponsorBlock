@@ -14,102 +14,96 @@ import org.robolectric.annotation.Config
 /**
  * SettingsCodec 的编解码单测。
  *
- * 类级跑在 JUnit（纯 JVM，Bundle 是 stub）上；Bundle 往返用例用
- * `Assume` + `bundleWorks()` 探测：有 Robolectric 时真跑，没有时 skip。
+ * 覆盖两件事:
+ *   1. 可见设置的往返(JSON / Map / Bundle 三条通道);
+ *   2. **已废弃设置不会被读进来** —— 老 prefs / 镜像里残留的 server_address、user_id、
+ *      min_skip_duration、countdown、color_* 一律忽略,快照取固定默认值。
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class SettingsCodecTest {
     @Test
-    fun parsesJsonWithValidationAndDefaults() {
+    fun parsesVisibleSettingsAndIgnoresRemovedKeys() {
         val json = JSONObject(
             mapOf(
                 SettingsKeys.ENABLED to false,
                 SettingsKeys.AUTO_SKIP to false,
                 SettingsKeys.MANUAL_SKIP to true,
                 SettingsKeys.MUTE_SEGMENTS to true,
-                SettingsKeys.MIN_SKIP_DURATION to "-2",
-                SettingsKeys.SKIP_COUNTDOWN to "3.5",
-                SettingsKeys.SERVER_ADDRESS to "https://example.com/",
-                SettingsKeys.CACHE_TTL_MINUTES to "-1",
-                SettingsKeys.USER_ID to "abc123",
-                SettingsKeys.DEFAULT_SUBMIT_CATEGORY to "unknown",
                 SettingsKeys.CAT_SPONSOR to true,
                 SettingsKeys.CAT_INTRO to false,
                 SettingsKeys.SHOW_TOAST to false,
                 SettingsKeys.SHOW_SEEKBAR_MARKER to false,
                 SettingsKeys.SHOW_TIME_DEDUCTION to false,
-                SettingsKeys.SHOW_SUBMIT_BUTTON to false,
                 SettingsKeys.HIDE_FULL_VIDEO_LABEL_CARDS to false,
-                SettingsKeys.colorKey("sponsor") to "#112233",
+                // ↓ 历史残留键:已从 UI 与读取路径移除,必须被忽略
+                "min_skip_duration" to "12.5",
+                "skip_countdown" to "3.5",
+                "server_address" to "https://mirror.example",
+                "cache_ttl_minutes" to "120",
+                "user_id" to "0123456789abcdef0123456789abcdef",
+                "default_submit_category" to "intro",
+                "show_submit_button" to false,
+                "color_sponsor" to "#112233",
             )
         )
 
         val snapshot = SettingsCodec.snapshotFromJson(json)
 
         assertFalse(snapshot.enabled)
+        // manual_skip 优先,旧配置的 auto+mute 同开被归一
         assertFalse(snapshot.autoSkip)
         assertTrue(snapshot.manualSkip)
-        assertTrue(snapshot.muteSegments)
-        assertEquals(0f, snapshot.minSkipDurationSec)
-        assertEquals(3.5f, snapshot.skipCountdownSec)
-        assertEquals("https://example.com/", snapshot.serverAddress)
-        assertEquals(0L, snapshot.cacheTtlMs)
-        assertEquals("", snapshot.userId)
-        assertEquals(SettingsKeys.DEFAULT_SUBMIT_CATEGORY_VALUE, snapshot.defaultSubmitCategory)
+        assertFalse(snapshot.muteSegments)
         assertTrue("sponsor" in snapshot.enabledCategories)
         assertFalse("intro" in snapshot.enabledCategories)
         assertFalse(snapshot.showToast)
         assertFalse(snapshot.showSeekbarMarker)
         assertFalse(snapshot.showTimeDeduction)
-        assertFalse(snapshot.showSubmitButton)
         assertFalse(snapshot.hideFullVideoLabelCards)
     }
 
     @Test
-    fun jsonRoundTripPreservesCoreFields() {
-        val original = SettingsSnapshot.DEFAULT.copy(
-            enabled = false,
-            minSkipDurationSec = 1.25f,
-            skipCountdownSec = 5.0f,
-            serverAddress = "https://mirror.example",
-            cacheTtlMs = 90L * 60_000L,
-            userId = "0123456789abcdef0123456789abcdef",
-            defaultSubmitCategory = "intro",
-            enabledCategories = setOf("intro", "outro"),
-            showTimeDeduction = false,
-            hideFullVideoLabelCards = false,
-            categoryColors = SettingsSnapshot.DEFAULT.categoryColors + ("sponsor" to 0xFF123456.toInt()),
+    fun skipModeIsNormalizedToSingleModeOnRead() {
+        // 旧 UI 允许「自动跳过 + 片段静音」同开:归一到自动跳过
+        val autoAndMute = SettingsCodec.snapshotFromJson(
+            JSONObject(
+                mapOf(
+                    SettingsKeys.AUTO_SKIP to true,
+                    SettingsKeys.MANUAL_SKIP to false,
+                    SettingsKeys.MUTE_SEGMENTS to true,
+                )
+            )
         )
+        assertTrue(autoAndMute.autoSkip)
+        assertFalse(autoAndMute.muteSegments)
 
-        val json = SettingsCodec.snapshotToJson(original)
-        val restored = SettingsCodec.snapshotFromJson(SettingsCodec.snapshotToJson(original))
+        // 纯静音配置保持静音
+        val pureMute = SettingsCodec.snapshotFromJson(
+            JSONObject(
+                mapOf(
+                    SettingsKeys.AUTO_SKIP to false,
+                    SettingsKeys.MANUAL_SKIP to false,
+                    SettingsKeys.MUTE_SEGMENTS to true,
+                )
+            )
+        )
+        assertFalse(pureMute.autoSkip)
+        assertTrue(pureMute.muteSegments)
 
-        assertEquals(original.enabled, restored.enabled)
-        assertEquals(original.minSkipDurationSec, restored.minSkipDurationSec)
-        assertEquals(original.skipCountdownSec, restored.skipCountdownSec)
-        assertEquals(original.serverAddress, restored.serverAddress)
-        assertEquals(original.cacheTtlMs, restored.cacheTtlMs)
-        assertEquals(original.userId, restored.userId)
-        assertEquals(original.defaultSubmitCategory, restored.defaultSubmitCategory)
-        assertEquals(original.enabledCategories, restored.enabledCategories)
-        assertEquals(original.showTimeDeduction, restored.showTimeDeduction)
-        assertEquals("#123456", json.getString(SettingsKeys.colorKey("sponsor")))
-        assertEquals(0xFF123456.toInt(), restored.categoryColors["sponsor"])
+        // 三键全 false 的旧配置没有对应选项,回落为自动跳过
+        val allOff = SettingsCodec.snapshotFromJson(
+            JSONObject(
+                mapOf(
+                    SettingsKeys.AUTO_SKIP to false,
+                    SettingsKeys.MANUAL_SKIP to false,
+                    SettingsKeys.MUTE_SEGMENTS to false,
+                )
+            )
+        )
+        assertTrue(allOff.autoSkip)
     }
 
-    @Test
-    fun roundTripPreservesFractionalCacheTtlMinutes() {
-        val original = SettingsSnapshot.DEFAULT.copy(cacheTtlMs = 30_000L)
-
-        val json = SettingsCodec.snapshotToJson(original)
-        val fromJson = SettingsCodec.snapshotFromJson(json)
-
-        assertEquals("0.5", json.getString(SettingsKeys.CACHE_TTL_MINUTES))
-        assertEquals(30_000L, fromJson.cacheTtlMs)
-    }
-
-    /** JSON 往返整对象等价（不逐字段断言：任何字段的默认值/映射漂移都会被抓住）。 */
     @Test
     fun jsonRoundTripIsWholeObjectEqual() {
         val original = richSnapshot()
@@ -138,7 +132,6 @@ class SettingsCodecTest {
      * `snapshotToBundle → snapshotFromBundle` 整对象等价。
      *
      * Robolectric 提供真 Bundle 实现，这一条会真正执行（不再被 Assume 永久跳过）。
-     * 无 Robolectric 的环境（如某些轻量 CI）里 `bundleWorks()` 为 false 时仍会 skip。
      */
     @Test
     fun bundleRoundTripIsWholeObjectEqual() {
@@ -159,6 +152,38 @@ class SettingsCodecTest {
         assertEquals(SettingsSnapshot.DEFAULT, snapshot)
     }
 
+    /** 写出的快照只包含可见设置 + 互斥三元组,不含任何已废弃键。 */
+    @Test
+    fun snapshotToMapOnlyWritesVisibleSettings() {
+        val keys = SettingsCodec.snapshotToMap(richSnapshot()).keys
+
+        val expected = buildSet {
+            add(SettingsKeys.ENABLED)
+            add(SettingsKeys.AUTO_SKIP)
+            add(SettingsKeys.MANUAL_SKIP)
+            add(SettingsKeys.MUTE_SEGMENTS)
+            addAll(SettingsKeys.CATEGORY_MAP.keys)
+            add(SettingsKeys.SHOW_TOAST)
+            add(SettingsKeys.SHOW_SEEKBAR_MARKER)
+            add(SettingsKeys.SHOW_TIME_DEDUCTION)
+            add(SettingsKeys.SHOW_SKIP_STATS)
+            add(SettingsKeys.HIDE_FULL_VIDEO_LABEL_CARDS)
+        }
+        assertEquals(expected, keys)
+    }
+
+    /** 非互斥快照在经过 codec 写出时被归一（防止旧配置绕过 UI 传播出去）。 */
+    @Test
+    fun snapshotToMapNormalizesMutexTriple() {
+        val map = SettingsCodec.snapshotToMap(
+            SettingsSnapshot.DEFAULT.copy(autoSkip = true, manualSkip = false, muteSegments = true)
+        )
+
+        assertEquals(true, map[SettingsKeys.AUTO_SKIP])
+        assertEquals(false, map[SettingsKeys.MANUAL_SKIP])
+        assertEquals(false, map[SettingsKeys.MUTE_SEGMENTS])
+    }
+
     /**
      * malformed JSON 字段级容错：坏字段只影响该字段，不抛异常、不影响其它字段。
      */
@@ -168,11 +193,7 @@ class SettingsCodecTest {
             """
             {
               "enabled": 1,
-              "server_address": {"nested": true},
-              "user_id": 12345678,
               "show_toast": "yes",
-              "cache_ttl_minutes": "120",
-              "min_skip_duration": "2",
               "cat_intro": false
             }
             """.trimIndent()
@@ -182,55 +203,22 @@ class SettingsCodecTest {
 
         // 坏字段：回退各自默认值，不做隐式强转
         assertTrue(snapshot.enabled)
-        assertEquals(SettingsKeys.DEFAULT_SERVER, snapshot.serverAddress)
-        assertEquals("", snapshot.userId)
         assertTrue(snapshot.showToast)
         // 好字段：照常解析
-        assertEquals(120L * 60_000L, snapshot.cacheTtlMs)
-        assertEquals(2f, snapshot.minSkipDurationSec)
         assertFalse("intro" in snapshot.enabledCategories)
-    }
-
-    /** 越界数字被 clamp（例如 cache_ttl_minutes 传 1e38）。 */
-    @Test
-    fun outOfRangeNumbersAreClamped() {
-        val json = JSONObject(
-            mapOf(
-                SettingsKeys.CACHE_TTL_MINUTES to "1e38",
-                SettingsKeys.MIN_SKIP_DURATION to "-5",
-                SettingsKeys.SKIP_COUNTDOWN to "1e30",
-            )
-        )
-
-        val snapshot = SettingsCodec.snapshotFromJson(json)
-
-        assertEquals(SettingsKeys.MAX_CACHE_TTL_MINUTES * 60_000L, snapshot.cacheTtlMs)
-        assertEquals(0f, snapshot.minSkipDurationSec)
-        assertEquals(SettingsKeys.MAX_SKIP_COUNTDOWN_SECONDS, snapshot.skipCountdownSec)
     }
 
     private fun richSnapshot(): SettingsSnapshot = SettingsSnapshot(
         enabled = false,
         autoSkip = false,
-        manualSkip = true,
+        manualSkip = false,
         muteSegments = true,
-        minSkipDurationSec = 12.5f,
-        skipCountdownSec = 4f,
-        serverAddress = "https://mirror.example:8443/base",
-        cacheTtlMs = 90L * 60_000L,
-        userId = "0123456789abcdef0123456789abcdef",
-        defaultSubmitCategory = "intro",
         enabledCategories = setOf("intro", "outro"),
         showToast = false,
         showSeekbarMarker = false,
         showTimeDeduction = false,
         showSkipStats = false,
-        showSubmitButton = false,
         hideFullVideoLabelCards = false,
-        // 颜色必须是 opaque：#RRGGBB 是存储契约，alpha 会被 codec 裁掉
-        categoryColors = SettingsKeys.CATEGORY_COLOR_DEFAULTS.mapValues { (category, _) ->
-            if (category == "sponsor") 0xFF123456.toInt() else 0xFF654321.toInt()
-        },
     )
 
     /** Bundle 在纯 JVM 单测里是否真的可用（Robolectric / 完整 android.jar 时才为 true）。 */

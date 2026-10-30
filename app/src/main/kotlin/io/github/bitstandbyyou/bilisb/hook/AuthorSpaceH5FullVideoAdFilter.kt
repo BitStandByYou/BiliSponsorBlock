@@ -10,6 +10,7 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import io.github.bitstandbyyou.bilisb.host.HookProbe
 import io.github.bitstandbyyou.bilisb.host.HostTargets
+import io.github.bitstandbyyou.bilisb.model.SponsorBlockConfig
 import io.github.bitstandbyyou.bilisb.settings.SettingsKeys
 import io.github.bitstandbyyou.bilisb.sponsor.FullVideoLabel
 import io.github.bitstandbyyou.bilisb.sponsor.FullVideoLabelLookup
@@ -187,7 +188,7 @@ object AuthorSpaceH5FullVideoAdFilter {
 
     private fun checkCard(webView: WebView, card: ArchiveCard, prefs: SharedPreferences, module: XposedModule) {
         if (!shouldHideCards(prefs) || !isActiveAuthorSpace(webView)) return
-        val serverAddress = readServerAddress(prefs)
+        val serverAddress = SponsorBlockConfig.DEFAULT_SERVER_ADDRESS
         FullVideoLabelLookup.shared(serverAddress).lookup(card.bvid) { result ->
             if (!isActiveAuthorSpace(webView) || !shouldHideCards(
                     webView.context.getSharedPreferences(SettingsKeys.PREFS_NAME, Context.MODE_PRIVATE),
@@ -278,9 +279,6 @@ object AuthorSpaceH5FullVideoAdFilter {
         prefs.getBoolean(SettingsKeys.ENABLED, true) &&
             prefs.getBoolean(SettingsKeys.HIDE_FULL_VIDEO_LABEL_CARDS, true)
 
-    private fun readServerAddress(prefs: SharedPreferences): String =
-        prefs.getString(SettingsKeys.SERVER_ADDRESS, SettingsKeys.DEFAULT_SERVER)
-            ?.takeIf { it.isNotBlank() } ?: SettingsKeys.DEFAULT_SERVER
 
     private fun declaredMethod(clazz: Class<*>, name: String, vararg parameterTypes: Class<*>): Method? =
         runCatching { clazz.getDeclaredMethod(name, *parameterTypes).apply { isAccessible = true } }.getOrNull()

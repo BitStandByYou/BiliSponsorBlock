@@ -2,7 +2,6 @@ package io.github.bitstandbyyou.bilisb.sponsor
 
 import android.os.SystemClock
 import io.github.bitstandbyyou.bilisb.model.SponsorBlockQuery
-import io.github.bitstandbyyou.bilisb.model.SponsorBlockSubmission
 import io.github.bitstandbyyou.bilisb.model.SponsorSegment
 import io.github.bitstandbyyou.bilisb.net.SponsorBlockApi
 import io.github.bitstandbyyou.bilisb.net.SponsorBlockClient
@@ -98,10 +97,6 @@ class SponsorBlockRepository(
         cache.remove(key)
         fetchedAt.remove(key)
         lastKnown.remove(key)
-    }
-
-    fun submit(submission: SponsorBlockSubmission, ignoreCache: Boolean = true): SponsorBlockClient.SubmitResult {
-        return client.submitSegment(submission, ignoreCache)
     }
 
     private fun removeEntry(key: String) {

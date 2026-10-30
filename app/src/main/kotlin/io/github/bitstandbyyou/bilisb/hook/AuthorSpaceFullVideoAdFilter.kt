@@ -7,6 +7,7 @@ import android.view.View
 import io.github.bitstandbyyou.bilisb.host.HookProbe
 import io.github.bitstandbyyou.bilisb.host.HostTargets
 import io.github.bitstandbyyou.bilisb.host.ResolvedTargets
+import io.github.bitstandbyyou.bilisb.model.SponsorBlockConfig
 import io.github.bitstandbyyou.bilisb.settings.SettingsKeys
 import io.github.bitstandbyyou.bilisb.sponsor.FullVideoLabel
 import io.github.bitstandbyyou.bilisb.sponsor.FullVideoLabelLookup
@@ -80,7 +81,7 @@ object AuthorSpaceFullVideoAdFilter {
                             val bound = BoundCard(
                                 item = WeakReference(item),
                                 bvid = bvid,
-                                serverAddress = readServerAddress(prefs),
+                                serverAddress = SponsorBlockConfig.DEFAULT_SERVER_ADDRESS,
                             )
                             synchronized(lock) { boundCards[root] = bound }
                             checkCard(root, bound, prefs, module)
@@ -207,9 +208,6 @@ object AuthorSpaceFullVideoAdFilter {
         prefs.getBoolean(SettingsKeys.ENABLED, true) &&
             prefs.getBoolean(SettingsKeys.HIDE_FULL_VIDEO_LABEL_CARDS, true)
 
-    private fun readServerAddress(prefs: SharedPreferences): String =
-        prefs.getString(SettingsKeys.SERVER_ADDRESS, SettingsKeys.DEFAULT_SERVER)
-            ?.takeIf { it.isNotBlank() } ?: SettingsKeys.DEFAULT_SERVER
 
     private fun videoBvid(item: Any): String? {
         val direct = field(item, "bvid")?.toString()?.takeIf { it.isNotBlank() }

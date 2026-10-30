@@ -62,9 +62,7 @@ data class SponsorBlockConfig(
     val enabledActionTypes: Set<String> = setOf("skip", "poi", "mute"),
 ) {
     companion object {
-        /**
-         * 默认服务器单一来源:SettingsKeys.DEFAULT_SERVER 引用这里,避免两处字面量漂移。
-         */
+        /** 模块固定使用的数据服务地址(设置页不提供修改)。 */
         const val DEFAULT_SERVER_ADDRESS = "https://bsbsb.top"
     }
 }

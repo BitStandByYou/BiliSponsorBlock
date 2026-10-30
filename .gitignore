@@ -16,3 +16,6 @@ keystore.properties
 *.jks
 *.keystore
 *.pepk
+
+# 本机开发说明（只留本地）
+AGENTS.md

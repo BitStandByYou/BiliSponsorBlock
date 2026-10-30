@@ -83,7 +83,7 @@ object HostTargets {
 
     /**
      * widget 的「从窗口分离」回调 —— 作为**播放器离开**的信号。
-     * 退出播放页/全屏切换时会触发，用于清理静音、倒计时、浮层与按钮。
+     * 退出播放页/全屏切换时会触发，用于清理静音与手动跳过按钮。
      */
     const val WIDGET_DETACH_METHOD = "onDetachedFromWindow"
 

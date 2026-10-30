@@ -13,19 +13,14 @@ object RemainingTimeFormatter {
     /**
      * 扣除「实际会被跳过」的时长后的剩余时长。
      *
-     * 旧实现无条件扣掉所有 `actionType=skip` 片段，但真实跳过还会被
-     * `minSkipDurationSec` 过滤，且总开关/自动/手动策略关闭时根本不跳，于是
-     * 显示的剩余时长比实际短。这里把两个条件做成参数。
+     * 旧实现无条件扣掉所有 `actionType=skip` 片段，但总开关/自动/手动策略关闭时根本不跳，
+     * 于是显示的剩余时长比实际短。这里把开关做成参数。
      *
-     * 参数带默认值是为了兼容现有调用点（`BiliSponsorBlockHooks`），它只传前两个参数。
-     *
-     * @param minSkipDurationMs 最小片段时长阈值，短于它不会被跳过，因此不扣减
-     * @param skipEnabled       跳过策略是否开启；关闭时返回原时长
+     * @param skipEnabled 跳过策略是否开启；关闭时返回原时长
      */
     fun adjustedDuration(
         durationMs: Long,
         segments: List<SponsorSegment>,
-        minSkipDurationMs: Long = 0L,
         skipEnabled: Boolean = true,
     ): Long {
         if (durationMs <= 0 || segments.isEmpty() || !skipEnabled) {
@@ -38,13 +33,9 @@ object RemainingTimeFormatter {
             .filter { it.actionType == "skip" && it.category !in nonDeductibleCategories }
             .sortedBy { it.startMs }
             .forEach { segment ->
-                // 先 clamp 到视频时长内再过阈值:endMs 远超 durationMs 的片段按「实际会跳的时长」
-                // 过滤,而不是按原始长度过阈值、随后又被 clamp 扣减,两者在边界上不一致
+                // 先 clamp 到视频时长内:endMs 远超 durationMs 的片段按「实际会跳的时长」扣减。
                 val start = segment.startMs.coerceAtLeast(0L)
                 val end = segment.endMs.coerceAtMost(durationMs)
-                if (end - start < minSkipDurationMs) {
-                    return@forEach
-                }
                 if (end <= start) {
                     return@forEach
                 }

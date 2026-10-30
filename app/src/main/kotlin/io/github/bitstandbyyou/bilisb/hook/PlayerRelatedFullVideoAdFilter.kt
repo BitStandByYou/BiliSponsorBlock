@@ -7,6 +7,7 @@ import io.github.bitstandbyyou.bilisb.host.HookProbe
 import io.github.bitstandbyyou.bilisb.host.HookResolve
 import io.github.bitstandbyyou.bilisb.host.HostTargets
 import io.github.bitstandbyyou.bilisb.host.ResolvedTargets
+import io.github.bitstandbyyou.bilisb.model.SponsorBlockConfig
 import io.github.bitstandbyyou.bilisb.settings.SettingsKeys
 import io.github.bitstandbyyou.bilisb.sponsor.FullVideoLabel
 import io.github.bitstandbyyou.bilisb.sponsor.FullVideoLabelLookup
@@ -83,7 +84,7 @@ object PlayerRelatedFullVideoAdFilter {
                     val bound = BoundCard(
                         item = WeakReference(card.first),
                         bvid = card.second,
-                        serverAddress = readServerAddress(prefs),
+                        serverAddress = SponsorBlockConfig.DEFAULT_SERVER_ADDRESS,
                     )
                     synchronized(lock) { boundCards[root] = bound }
                     checkCard(root, bound, prefs, module)
@@ -222,9 +223,6 @@ object PlayerRelatedFullVideoAdFilter {
         prefs.getBoolean(SettingsKeys.ENABLED, true) &&
             prefs.getBoolean(SettingsKeys.HIDE_FULL_VIDEO_LABEL_CARDS, true)
 
-    private fun readServerAddress(prefs: SharedPreferences): String =
-        prefs.getString(SettingsKeys.SERVER_ADDRESS, SettingsKeys.DEFAULT_SERVER)
-            ?.takeIf { it.isNotBlank() } ?: SettingsKeys.DEFAULT_SERVER
 
     private fun field(target: Any, name: String): Any? {
         var type: Class<*>? = target.javaClass

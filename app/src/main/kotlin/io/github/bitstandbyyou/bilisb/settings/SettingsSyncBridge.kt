@@ -20,9 +20,7 @@ object SettingsSyncBridge {
     val AUTHORITY: String = io.github.bitstandbyyou.bilisb.BuildConfig.APPLICATION_ID + ".settings"
     const val METHOD_GET_SETTINGS = "getSettings"
     const val METHOD_PUT_SETTINGS = "putSettings"
-    const val METHOD_PUT_USER_ID = "putUserId"
     private const val EXTRA_JSON = "settings_json"
-    private const val EXTRA_USER_ID = "user_id"
     private const val TAG = "SettingsSyncBridge"
 
     fun readSnapshot(context: Context): SettingsSnapshot? {
@@ -44,19 +42,6 @@ object SettingsSyncBridge {
             result?.getBoolean("ok", false) == true
         }.getOrElse {
             Log.w(TAG, "writeSnapshot failed: ${it.message}")
-            false
-        }
-    }
-
-    fun writeUserId(context: Context, userId: String): Boolean {
-        return runCatching {
-            val extras = Bundle().apply {
-                putString(EXTRA_USER_ID, userId)
-            }
-            val result = context.contentResolver.call(contentUri(), METHOD_PUT_USER_ID, null, extras)
-            result?.getBoolean("ok", false) == true
-        }.getOrElse {
-            Log.w(TAG, "writeUserId failed: ${it.message}")
             false
         }
     }

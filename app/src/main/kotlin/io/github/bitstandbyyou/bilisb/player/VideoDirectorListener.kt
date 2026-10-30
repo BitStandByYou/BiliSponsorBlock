@@ -72,7 +72,7 @@ object VideoDirectorListener {
      * dispatch 直接派发 / flushPendingIds 补发成功后都记一笔;flush 重发前先查账,
      * 同一 context 拿过同一份 ids 就跳过 —— 否则每次 bindPlayer(全屏切换会反复 bind)
      * 都会把同一视频重喂一遍,onVideoIds 的「同一视频重进」分支会清空已跳过记录
-     * (倒计时重弹等)。不同 context(玩家重建后 Context 实例变了、hash 变了)仍会正常补发。
+     * (片段被重新标记为可跳等)。不同 context(玩家重建后 Context 实例变了、hash 变了)仍会正常补发。
      */
     private val deliveredIdsByContext = java.util.concurrent.ConcurrentHashMap<Int, Pair<Long, Long>>()
 
@@ -298,7 +298,7 @@ object VideoDirectorListener {
 
         // 兜底：逐字段找 long（aid 先出现，随后是 cid）。
         // 危险路径:任意「第一个/第二个非零且不相等的 long/int 字段」都可能是 duration、
-        // epid、seasonId 等其它 id,误选会拉取并应用**错误视频**的片段(seek/静音/提交全错)。
+        // epid、seasonId 等其它 id,误选会拉取并应用**错误视频**的片段(seek/静音全错)。
         // 所以这里加两道校验:量级范围(aid/cid 是 1e8~1e13 级的 id,不是 1e3 级的时长,
         // 也不是 1e15+ 的 seasonId)+ 结果只经 probe 记录后采用。
         var aid = 0L

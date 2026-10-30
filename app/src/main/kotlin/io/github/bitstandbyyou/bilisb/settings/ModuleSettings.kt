@@ -123,29 +123,27 @@ object ModuleSettings {
 
 /**
  * 配置快照(不可变)。
+ *
+ * 只包含**用户能改**的设置。服务器地址 / 缓存 TTL / 最小片段时长 / 自动跳过倒计时 / 标记颜色
+ * 都是代码里的固定默认值,不做成字段 —— 避免出现"界面上没有、却在后台生效"的隐藏配置。
+ * 提交功能已移除,快照里也没有 userId / 提交类别之类的字段。
  */
 data class SettingsSnapshot(
     val enabled: Boolean,
+    /** 自动跳过(与 [manualSkip] / [muteSegments] 互斥,见 [SkipMode])。 */
     val autoSkip: Boolean,
+    /** 手动跳过:片段内显示按钮。 */
     val manualSkip: Boolean,
+    /** 片段静音:只静音 mute 类片段,不跳过。 */
     val muteSegments: Boolean,
-    val minSkipDurationSec: Float,
-    val skipCountdownSec: Float,
-    val serverAddress: String,
-    val cacheTtlMs: Long,
-    val userId: String,
-    val defaultSubmitCategory: String,
     val enabledCategories: Set<String>,
     val showToast: Boolean,
     val showSeekbarMarker: Boolean,
     val showTimeDeduction: Boolean,
     /** 是否记录/展示跳过统计（关闭后不再累计新的跳过次数与节省时长）。 */
     val showSkipStats: Boolean,
-    val showSubmitButton: Boolean,
     /** 首页推荐隐藏整段推广卡片；播放页更多视频仅隐藏整段广告卡片。 */
     val hideFullVideoLabelCards: Boolean,
-    /** 分类标记颜色:category 字符串 → ARGB int。缺省由 CATEGORY_COLOR_DEFAULTS 填充。 */
-    val categoryColors: Map<String, Int>,
 ) {
     companion object {
         val DEFAULT = SettingsCodec.defaultSnapshot()

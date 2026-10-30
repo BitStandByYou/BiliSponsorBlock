@@ -15,7 +15,7 @@ import io.github.libxposed.api.XposedModule
  * 统一走 [PlayerBridge.context] 获取 Context，避免反射失败后提前返回，
  * 并且取不到 Context 时**必须留日志**，不再静默。
  *
- * 另外加了相同文案的节流：进度回调与倒计时结束时可能连着触发多次，宿主 Toast
+ * 另外加了相同文案的节流：进度回调可能连着触发多次，宿主 Toast
  * 队列会排成一长串。节流丢弃**完全不写日志**（否则日志比 Toast 还吵），
  * 只有真正弹出的那一次记 info。
  */

@@ -83,7 +83,7 @@ object ResolvedTargets {
 }
 
 /**
- * 用 DexKit 定位宿主里**被混淆**的类（AGENTS.md 第四节强制）。
+ * 用 DexKit 定位宿主里**被混淆**的类（见 AGENTS.md「定位宿主混淆成员必须使用 DexKit」）。
  *
  * 策略：先试写死的候选名；**只有候选全部落空时**才创建 DexKit 桥做一次结构查询。
  * 这样正常版本零开销，宿主改版重排混淆名时能自动修复（`DexKitBridge.create` 很贵，

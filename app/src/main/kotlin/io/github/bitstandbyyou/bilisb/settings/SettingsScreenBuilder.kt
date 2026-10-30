@@ -1,42 +1,43 @@
 package io.github.bitstandbyyou.bilisb.settings
 
 import android.app.Activity
-import android.app.AlertDialog
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
-import android.content.DialogInterface
 import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
-import android.text.InputType
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
+import android.text.style.RelativeSizeSpan
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.CheckBox
-import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import io.github.bitstandbyyou.bilisb.BuildConfig
 import io.github.bitstandbyyou.bilisb.model.SponsorCategories
 import io.github.bitstandbyyou.bilisb.sponsor.SkipStatsStore
-import io.github.bitstandbyyou.bilisb.sponsor.UserIdentityStore
 
+/**
+ * 设置页构建。
+ *
+ * 只有**单页**:模块入口 Activity 和宿主内弹窗共用本对象，避免双实现漂移。
+ * 页面上只放用户能改的设置；服务器地址、缓存 TTL、最小片段时长、倒计时、标记颜色、
+ * 提交相关配置都不再暴露（固定为默认值，见 [SettingsKeys] 的类注释）。
+ */
 object SettingsScreenBuilder {
     private const val REPO_URL = "https://github.com/BitStandByYou/BiliSponsorBlock"
 
-    /** statusPanel 的兜底单例(模块进程内复用,避免反复 new SettingsWriter 泄漏线程/监听器)。 */
-    @Volatile
-    private var sharedStatusWriter: SettingsWriter? = null
-
-    // ---- B 站视觉规范(控制中心专用):品牌粉、白色圆角卡片、浅灰页面底 ----
+    // ---- B 站视觉规范:品牌粉、白色圆角卡片、浅灰页面底 ----
     private val BILI_PINK = 0xFFFB7299.toInt()
     private val BILI_PINK_LIGHT = 0xFFFF9EB4.toInt()
     private val BILI_TEXT_PRIMARY = 0xFF18191C.toInt()
@@ -50,57 +51,6 @@ object SettingsScreenBuilder {
             shape = GradientDrawable.RECTANGLE
             setColor(color)
             cornerRadius = dp(activity, radiusDp).toFloat()
-        }
-
-    private fun biliDivider(activity: Activity): View = View(activity).apply {
-        layoutParams = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(activity, 1),
-        ).apply { setMargins(dp(activity, 14), 0, dp(activity, 14), 0) }
-        setBackgroundColor(BILI_DIVIDER)
-    }
-
-    /**
-     * 详情弹窗整页(B 站配色):浅灰圆角页面底 + 「‹ 返回」标题栏 + 可滚动内容。
-     * 子页不再使用 AlertDialog 原生标题/按钮 —— 透明窗口下它们会露出宿主主题的深色样式。
-     */
-    fun detailPage(activity: Activity, title: String, onBack: () -> Unit, content: View): View {
-        fun header(): View = LinearLayout(activity).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(activity, 6), dp(activity, 8), dp(activity, 14), dp(activity, 8))
-            addView(TextView(activity).apply {
-                text = "‹ 返回"
-                textSize = 15f
-                setTextColor(BILI_PINK)
-                setTypeface(typeface, Typeface.BOLD)
-                isClickable = true
-                isFocusable = true
-                background = selectableItemBackground(activity)
-                setPadding(dp(activity, 8), dp(activity, 4), dp(activity, 12), dp(activity, 4))
-                setOnClickListener { onBack() }
-            })
-            addView(TextView(activity).apply {
-                text = title
-                textSize = 17f
-                setTextColor(BILI_TEXT_PRIMARY)
-                setTypeface(typeface, Typeface.BOLD)
-            })
-        }
-        return LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL
-            background = biliCard(activity, BILI_PAGE_BG, 12)
-            addView(header())
-            addView(wrapScroll(activity, content))
-        }
-    }
-
-    /** 详情页容器:与控制中心同源的浅灰页面底。 */
-    fun biliPage(activity: Activity, block: LinearLayout.() -> Unit): LinearLayout =
-        LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL
-            background = biliCard(activity, BILI_PAGE_BG, 12)
-            setPadding(dp(activity, 12), dp(activity, 12), dp(activity, 12), dp(activity, 4))
-            block()
         }
 
     /** 卡片内的行间分割线(卡片自带水平内边距,不再额外缩进)。 */
@@ -134,21 +84,42 @@ object SettingsScreenBuilder {
         ).apply { bottomMargin = dp(activity, 10) })
     }
 
-    fun buildMain(
-        activity: Activity,
-        showStatusPanel: Boolean = false,
-        statusWriter: SettingsWriter? = null,
-        onSponsorBlockClick: () -> Unit,
-    ): LinearLayout {
-        // 控制中心 = B 站风格:浅灰页面底(#F1F2F3)+ 白色圆角卡片 + 品牌粉头图(#FB7299)。
-        // 行内文字用 B 站 App 的固定色板,不跟随宿主主题,保证浅色卡片上的对比度。
+    /** 品牌头图(粉渐变)。 */
+    private fun banner(activity: Activity): View = LinearLayout(activity).apply {
+        orientation = LinearLayout.VERTICAL
+        background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            orientation = GradientDrawable.Orientation.TL_BR
+            colors = intArrayOf(BILI_PINK, BILI_PINK_LIGHT)
+            cornerRadius = dp(activity, 12).toFloat()
+        }
+        setPadding(dp(activity, 16), dp(activity, 14), dp(activity, 16), dp(activity, 14))
+        addView(TextView(activity).apply {
+            text = "哔哩哔哩空降助手"
+            textSize = 20f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, Typeface.BOLD)
+        })
+        addView(TextView(activity).apply {
+            text = "SponsorBlock · 跳过视频恰饭片段"
+            textSize = 12f
+            setTextColor(0xE6FFFFFF.toInt())
+            setPadding(0, dp(activity, 2), 0, 0)
+        })
+    }
+
+    /**
+     * 构建整页设置(单页,包含总开关 / 跳过方式 / 跳过类别 / 界面显示 / 统计 / 关于)。
+     */
+    fun buildSettingsPage(activity: Activity, prefs: SharedPreferences): LinearLayout {
         fun card(block: LinearLayout.() -> Unit): LinearLayout = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             background = biliCard(activity, BILI_CARD_BG, 10)
+            setPadding(dp(activity, 14), dp(activity, 6), dp(activity, 14), dp(activity, 6))
             block()
         }
 
-        fun cardLayoutParams(): LinearLayout.LayoutParams = LinearLayout.LayoutParams(
+        fun cardLp(): LinearLayout.LayoutParams = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
         ).apply { bottomMargin = dp(activity, 10) }
 
@@ -157,146 +128,38 @@ object SettingsScreenBuilder {
             background = biliCard(activity, BILI_PAGE_BG, 12)
             setPadding(dp(activity, 12), dp(activity, 12), dp(activity, 12), dp(activity, 4))
 
-            // 品牌头图(粉渐变)
-            addView(LinearLayout(activity).apply {
-                orientation = LinearLayout.VERTICAL
-                background = GradientDrawable().apply {
-                    shape = GradientDrawable.RECTANGLE
-                    orientation = GradientDrawable.Orientation.TL_BR
-                    colors = intArrayOf(BILI_PINK, BILI_PINK_LIGHT)
-                    cornerRadius = dp(activity, 12).toFloat()
-                }
-                setPadding(dp(activity, 16), dp(activity, 14), dp(activity, 16), dp(activity, 14))
-                addView(TextView(activity).apply {
-                    text = "哔哩哔哩空降助手"
-                    textSize = 20f
-                    setTextColor(Color.WHITE)
-                    setTypeface(typeface, Typeface.BOLD)
-                })
-                addView(TextView(activity).apply {
-                    text = "SponsorBlock · 跳过视频恰饭片段"
-                    textSize = 12f
-                    setTextColor(0xE6FFFFFF.toInt())
-                    setPadding(0, dp(activity, 2), 0, 0)
-                })
-            }, cardLayoutParams())
+            addView(banner(activity), cardLp())
 
-            if (showStatusPanel) {
-                addView(card { addView(statusPanel(activity, statusWriter)) }, cardLayoutParams())
-            }
-
-            // 功能卡片:SponsorBlock
+            // 总开关
             addView(card {
-                addView(entryRow(activity, "SponsorBlock", "赞助/片头等片段的跳过与标记设置", onSponsorBlockClick))
-            }, cardLayoutParams())
-
-            // 关于卡片(版本行可点击 → 跳转 GitHub 项目页;发版说明以 GitHub Releases 为单一来源)
-            addView(TextView(activity).apply {
-                text = "关于"
-                textSize = 13f
-                setTextColor(BILI_TEXT_SECONDARY)
-                setPadding(dp(activity, 4), dp(activity, 2), 0, dp(activity, 6))
-            })
-            addView(card {
-                addView(aboutItem(activity, "版本", "${BuildConfig.VERSION_NAME}(versionCode ${BuildConfig.VERSION_CODE})") {
-                    openUrl(activity, REPO_URL)
-                })
-                addView(biliDivider(activity))
-                addView(aboutItem(activity, "作者", "BitStandByYou"))
-            })
-        }
-    }
-
-    /**
-     * 状态面板。优先复用调用方传入的 [statusWriter](LauncherActivity 持有);
-     * 不传时用进程级缓存单例 —— 之前这里每次 buildMain 都 new 一个 SettingsWriter,
-     * 反复进出主页会持续累积「单线程 IO 线程 + prefs 监听器」。
-     */
-    private fun statusPanel(activity: Activity, statusWriter: SettingsWriter? = null): View {
-        val writer = statusWriter ?: sharedStatusWriter ?: SettingsWriter(activity).also { sharedStatusWriter = it }
-        val prefs = writer.sharedPreferences
-        val snapshot = SettingsCodec.snapshotFromPreferences(prefs)
-        val userIdState = when {
-            UserIdentityStore.isValidUserId(snapshot.userId) -> "已生成"
-            snapshot.userId.isBlank() -> "未生成"
-            else -> "无效"
-        }
-        val source = SettingsSyncBridge.readSnapshot(activity)?.let { "Provider" } ?: "本地 SharedPreferences"
-        val summary = listOf(
-            "模块状态：${if (snapshot.enabled) "已启用" else "已关闭"}",
-            "设置来源：$source",
-            "服务器：${snapshot.serverAddress}",
-            "缓存 TTL：${formatCacheTtl(snapshot.cacheTtlMs)}",
-            "用户 ID：$userIdState",
-            "启用分类：${snapshot.enabledCategories.size}/${SettingsKeys.CATEGORY_MAP.size}",
-        ).joinToString("\n")
-
-        return LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(activity, 12), 0, dp(activity, 12))
-            addView(TextView(activity).apply {
-                text = "状态"
-                textSize = 16f
-                setTextColor(primaryTextColor(activity))
-                setTypeface(typeface, Typeface.BOLD)
-            })
-            addView(TextView(activity).apply {
-                text = summary
-                textSize = 13f
-                setTextColor(Color.DKGRAY)
-                setPadding(0, dp(activity, 6), 0, 0)
-            })
-        }
-    }
-
-    fun buildDetail(activity: Activity, prefs: SharedPreferences): LinearLayout {
-        return biliPage(activity) {
-            biliSection(this, activity, "SponsorBlock") {
                 addView(createCheckBox(activity, prefs, SettingsKeys.ENABLED, "启用 SponsorBlock", "关闭后模块不工作", true))
+            }, cardLp())
+
+            // 跳过方式(三选一)
+            biliSection(this, activity, "跳过方式") {
+                addView(createSkipModeGroup(activity, prefs))
             }
 
-            biliSection(this, activity, "自动跳过") {
-                val rows = listOf(
-                    createCheckBox(activity, prefs, SettingsKeys.AUTO_SKIP, "自动跳过", "检测到片段时自动跳过", true),
-                    createCheckBox(activity, prefs, SettingsKeys.MANUAL_SKIP, "手动跳过", "片段内显示跳过按钮,点按才跳(覆盖自动跳过)", false),
-                    createCheckBox(activity, prefs, SettingsKeys.MUTE_SEGMENTS, "片段静音", "对 mute 类片段静音而非跳过", false),
-                )
-                rows.forEachIndexed { index, row ->
-                    if (index > 0) addView(biliDividerInner(activity))
-                    addView(row)
-                }
-                addView(biliDividerInner(activity))
-                addView(numberRow(activity, prefs, SettingsKeys.MIN_SKIP_DURATION, "最小片段时长(秒)：", "0"))
-                addView(biliDividerInner(activity))
-                addView(numberRow(activity, prefs, SettingsKeys.SKIP_COUNTDOWN, "自动跳过倒计时(秒)：", "0"))
-            }
-
+            // 跳过类别
             biliSection(this, activity, "跳过类别") {
                 val categories = listOf(
-                Triple(SettingsKeys.CAT_SPONSOR, "赞助/恰饭", "付费推广、赞助商"),
-                Triple(SettingsKeys.CAT_SELFPROMO, "自我推广", "自己的商品、链接"),
-                Triple(SettingsKeys.CAT_INTERACTION, "互动提醒", "点赞、关注提示"),
-                Triple(SettingsKeys.CAT_INTRO, "开场动画", "片头动画"),
-                Triple(SettingsKeys.CAT_OUTRO, "结束画面", "片尾鸣谢"),
-                Triple(SettingsKeys.CAT_PREVIEW, "回顾/概要", "前情回顾"),
-                Triple(SettingsKeys.CAT_MUSIC_OFFTOPIC, "非音乐片段", "MV中非音乐部分"),
-                Triple(SettingsKeys.CAT_FILLER, "填充内容", "笑话、重复片段"),
-                Triple(SettingsKeys.CAT_POI_HIGHLIGHT, "精彩时刻", "视频精彩部分"),
-            )
-            categories.forEachIndexed { index, (key, title, summary) ->
-                if (index > 0) addView(biliDividerInner(activity))
-                addView(createCheckBox(activity, prefs, key, title, summary, true))
-            }
-        }
-
-            biliSection(this, activity, "标记颜色") {
-                addView(hint(activity, "点击色块自定义各分类在进度条上的标记颜色"))
-                SponsorCategories.displayNames.entries.forEachIndexed { index, (category, name) ->
+                    Triple(SettingsKeys.CAT_SPONSOR, "赞助/恰饭", "付费推广、赞助商"),
+                    Triple(SettingsKeys.CAT_SELFPROMO, "自我推广", "自己的商品、链接"),
+                    Triple(SettingsKeys.CAT_INTERACTION, "互动提醒", "点赞、关注提示"),
+                    Triple(SettingsKeys.CAT_INTRO, "开场动画", "片头动画"),
+                    Triple(SettingsKeys.CAT_OUTRO, "结束画面", "片尾鸣谢"),
+                    Triple(SettingsKeys.CAT_PREVIEW, "回顾/概要", "前情回顾"),
+                    Triple(SettingsKeys.CAT_MUSIC_OFFTOPIC, "非音乐片段", "MV中非音乐部分"),
+                    Triple(SettingsKeys.CAT_FILLER, "填充内容", "笑话、重复片段"),
+                    Triple(SettingsKeys.CAT_POI_HIGHLIGHT, "精彩时刻", "视频精彩部分"),
+                )
+                categories.forEachIndexed { index, (key, title, summary) ->
                     if (index > 0) addView(biliDividerInner(activity))
-                    addView(ColorPickerDialog.colorRow(activity, prefs, category, name))
+                    addView(createCheckBox(activity, prefs, key, title, summary, true))
                 }
             }
 
+            // 界面显示
             biliSection(this, activity, "界面显示") {
                 val rows = listOf(
                     createCheckBox(activity, prefs, SettingsKeys.SHOW_TOAST, "跳过提示", "跳过时显示 Toast", true),
@@ -316,34 +179,92 @@ object SettingsScreenBuilder {
                     if (index > 0) addView(biliDividerInner(activity))
                     addView(row)
                 }
-                // 播放器内的「标记按钮」已按需求移除，对应开关不再展示；
-                // SettingsKeys.SHOW_SUBMIT_BUTTON 暂时保留以兼容旧配置与编解码。
             }
 
+            // 统计
             biliSection(this, activity, "统计") {
                 buildStats(activity, this)
             }
 
-            biliSection(this, activity, "提交配置") {
-                addView(userIdRow(activity, prefs))
+            // 关于(版本行可点击 → 跳转 GitHub 项目页;发版说明以 GitHub Releases 为单一来源)
+            addView(TextView(activity).apply {
+                text = "关于"
+                textSize = 13f
+                setTextColor(BILI_TEXT_SECONDARY)
+                setPadding(dp(activity, 4), dp(activity, 2), 0, dp(activity, 6))
+            })
+            addView(card {
+                addView(aboutItem(activity, "版本", "${BuildConfig.VERSION_NAME}(versionCode ${BuildConfig.VERSION_CODE})") {
+                    openUrl(activity, REPO_URL)
+                })
                 addView(biliDividerInner(activity))
-                addView(defaultSubmitCategoryRow(activity, prefs))
-            }
-
-            biliSection(this, activity, "服务器") {
-                addView(serverRow(activity, prefs))
-                addView(biliDividerInner(activity))
-                addView(numberRow(activity, prefs, SettingsKeys.CACHE_TTL_MINUTES, "缓存 TTL(分钟)：", SettingsKeys.DEFAULT_CACHE_TTL_MINUTES))
-            }
+                addView(aboutItem(activity, "作者", "BitStandByYou"))
+            }, cardLp())
         }
     }
 
-    fun wrapScroll(activity: Activity, child: View): ScrollView = ScrollView(activity).apply {
-        layoutParams = ViewGroup.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
+    /**
+     * 跳过方式三选一。
+     *
+     * 持久化仍是三个互斥布尔(见 [SkipMode]):选中即写入归一后的三元组,
+     * 旧版本「自动跳过 + 片段静音」同开的配置在这里被收敛成单选。
+     *
+     * 每个选项用**单个 RadioButton** 承载「标题 + 说明」（说明用 span 缩小字号），
+     * 因为 RadioGroup 只会给**直接子 RadioButton** 装互斥监听；
+     * 把 RadioButton 包在 LinearLayout 里会导致互斥失效（多个同时可选中）。
+     */
+    private fun createSkipModeGroup(activity: Activity, prefs: SharedPreferences): RadioGroup {
+        val group = RadioGroup(activity).apply {
+            orientation = RadioGroup.VERTICAL
+            setPadding(0, dp(activity, 2), 0, dp(activity, 2))
+        }
+        val idToMode = linkedMapOf<Int, SkipMode>()
+        val current = SkipMode.fromPreferences(prefs)
+        val options = listOf(
+            Triple(SkipMode.AUTO, "自动跳过", "检测到片段时自动跳过"),
+            Triple(SkipMode.MANUAL, "手动跳过", "片段内显示「跳过」按钮，点按才跳"),
+            Triple(SkipMode.MUTE, "片段静音", "只把静音类片段静音，不跳过任何片段"),
         )
-        addView(child)
+        options.forEachIndexed { index, (mode, title, summary) ->
+            if (index > 0) group.addView(biliDividerInner(activity))
+            val label = SpannableStringBuilder().apply {
+                append(title)
+                setSpan(
+                    ForegroundColorSpan(BILI_TEXT_PRIMARY), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+                )
+                append("\n")
+                val summaryStart = length
+                append(summary)
+                setSpan(
+                    RelativeSizeSpan(0.8f), summaryStart, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+                )
+                setSpan(
+                    ForegroundColorSpan(BILI_TEXT_SECONDARY), summaryStart, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+                )
+            }
+            val radio = RadioButton(activity).apply {
+                id = View.generateViewId()
+                text = label
+                textSize = 15f
+                setTextColor(BILI_TEXT_PRIMARY)
+                setPadding(0, dp(activity, 8), 0, dp(activity, 8))
+                runCatching {
+                    buttonTintList = android.content.res.ColorStateList(
+                        arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
+                        intArrayOf(BILI_PINK, 0xFFCCCCCC.toInt()),
+                    )
+                }
+                isChecked = mode == current
+            }
+            idToMode[radio.id] = mode
+            group.addView(radio)
+        }
+        group.setOnCheckedChangeListener { _, checkedId ->
+            val mode = idToMode[checkedId] ?: return@setOnCheckedChangeListener
+            if (mode == SkipMode.fromPreferences(prefs)) return@setOnCheckedChangeListener
+            SkipMode.writeTo(prefs, mode)
+        }
+        return group
     }
 
     private fun buildStats(activity: Activity, parent: LinearLayout) {
@@ -361,11 +282,12 @@ object SettingsScreenBuilder {
         }
         val summary = TextView(activity).apply {
             textSize = 15f
+            setTextColor(BILI_TEXT_PRIMARY)
             setPadding(0, dp(activity, 4), 0, dp(activity, 4))
         }
         val detail = TextView(activity).apply {
             textSize = 12f
-            setTextColor(Color.GRAY)
+            setTextColor(BILI_TEXT_SECONDARY)
             setPadding(0, 0, 0, dp(activity, 8))
         }
 
@@ -400,15 +322,6 @@ object SettingsScreenBuilder {
         val m = (totalSec % 3600) / 60
         val s = totalSec % 60
         return if (h > 0) String.format("%d:%02d:%02d", h, m, s) else String.format("%d:%02d", m, s)
-    }
-
-    private fun formatCacheTtl(ms: Long): String {
-        val minutes = ms / 60_000.0
-        return if (minutes % 1.0 == 0.0) {
-            "${minutes.toLong()} 分钟"
-        } else {
-            "${minutes.toString().trimEnd('0').trimEnd('.')} 分钟"
-        }
     }
 
     private fun createCheckBox(
@@ -450,280 +363,6 @@ object SettingsScreenBuilder {
         return layout
     }
 
-    /**
-     * 数值输入行。
-     *
-     * [defaultValue] 必须按 key 传真实默认值：缓存 TTL 的真实默认是
-     * [SettingsKeys.DEFAULT_CACHE_TTL_MINUTES]（60），硬编码 "0" 会让 UI 显示成 0，
-     * 与钩子端实际生效的 60 分钟不一致。非法/空输入也退回该默认值。
-     */
-    private fun numberRow(
-        activity: Activity,
-        prefs: SharedPreferences,
-        key: String,
-        label: String,
-        defaultValue: String,
-    ): LinearLayout {
-        return LinearLayout(activity).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(activity, 10), 0, dp(activity, 10))
-            gravity = Gravity.CENTER_VERTICAL
-            addView(TextView(activity).apply {
-                text = label
-                textSize = 14f
-            })
-            addView(EditText(activity).apply {
-                setText(prefs.getString(key, defaultValue))
-                hint = defaultValue
-                inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                setOnFocusChangeListener { _, hasFocus ->
-                    if (!hasFocus) {
-                        val fallback = defaultValue.toFloatOrNull() ?: 0f
-                        val max = when (key) {
-                            SettingsKeys.MIN_SKIP_DURATION -> SettingsKeys.MAX_MIN_SKIP_DURATION_SECONDS
-                            SettingsKeys.SKIP_COUNTDOWN -> SettingsKeys.MAX_SKIP_COUNTDOWN_SECONDS
-                            SettingsKeys.CACHE_TTL_MINUTES -> SettingsKeys.MAX_CACHE_TTL_MINUTES.toFloat()
-                            else -> Float.MAX_VALUE
-                        }
-                        val value = text.toString().trim().toFloatOrNull()?.coerceIn(0f, max) ?: fallback
-                        val normalized = if (value % 1f == 0f) value.toLong().toString() else value.toString()
-                        setText(normalized)
-                        prefs.edit().putString(key, normalized).apply()
-                    }
-                }
-            })
-        }
-    }
-
-    private fun serverRow(activity: Activity, prefs: SharedPreferences): LinearLayout {
-        return LinearLayout(activity).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(activity, 10), 0, dp(activity, 10))
-            gravity = Gravity.CENTER_VERTICAL
-            addView(TextView(activity).apply {
-                text = "服务器地址："
-                textSize = 14f
-            })
-            addView(EditText(activity).apply {
-                setText(prefs.getString(SettingsKeys.SERVER_ADDRESS, SettingsKeys.DEFAULT_SERVER))
-                hint = SettingsKeys.DEFAULT_SERVER
-                inputType = InputType.TYPE_TEXT_VARIATION_URI
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                setOnFocusChangeListener { _, hasFocus ->
-                    if (!hasFocus) {
-                        val addr = text.toString().trim()
-                        if (addr.isEmpty()) {
-                            setText(prefs.getString(SettingsKeys.SERVER_ADDRESS, SettingsKeys.DEFAULT_SERVER))
-                        } else if (!SettingsSanitizer.isValidServerAddress(addr)) {
-                            // 非法地址不落盘：SponsorBlockClient 直接拼 `${serverAddress}/api/...`，
-                            // 无 scheme / 超长的地址只会让请求全挂，这里回显已存值并提示。
-                            Toast.makeText(activity, "服务器地址应以 http:// 或 https:// 开头", Toast.LENGTH_SHORT).show()
-                            setText(prefs.getString(SettingsKeys.SERVER_ADDRESS, SettingsKeys.DEFAULT_SERVER))
-                        } else {
-                            prefs.edit().putString(SettingsKeys.SERVER_ADDRESS, addr).apply()
-                        }
-                    }
-                }
-            })
-        }
-    }
-
-    private fun defaultSubmitCategoryRow(activity: Activity, prefs: SharedPreferences): View {
-        fun currentCategory(): String {
-            val saved = prefs.getString(SettingsKeys.DEFAULT_SUBMIT_CATEGORY, SettingsKeys.DEFAULT_SUBMIT_CATEGORY_VALUE)
-            return if (saved in SponsorCategories.displayNames) {
-                saved ?: SettingsKeys.DEFAULT_SUBMIT_CATEGORY_VALUE
-            } else {
-                SettingsKeys.DEFAULT_SUBMIT_CATEGORY_VALUE
-            }
-        }
-
-        val valueView = TextView(activity).apply {
-            textSize = 13f
-            setTextColor(Color.GRAY)
-            setPadding(0, dp(activity, 2), 0, 0)
-        }
-        fun refresh() {
-            valueView.text = SponsorCategories.displayName(currentCategory())
-        }
-        refresh()
-
-        return LinearLayout(activity).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(activity, 10), 0, dp(activity, 10))
-            isClickable = true
-            background = selectableItemBackground(activity)
-
-            addView(LinearLayout(activity).apply {
-                orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                addView(TextView(activity).apply {
-                    text = "默认标记类别"
-                    textSize = 16f
-                    setTextColor(primaryTextColor(activity))
-                    setTypeface(typeface, Typeface.BOLD)
-                })
-                addView(valueView)
-            })
-            addView(TextView(activity).apply {
-                text = "›"
-                textSize = 24f
-                setTextColor(Color.GRAY)
-            })
-            setOnClickListener {
-                val categories = SponsorCategories.displayNames.keys.toList()
-                val labels = categories.map { SponsorCategories.displayName(it) }.toTypedArray()
-                val index = categories.indexOf(currentCategory()).coerceAtLeast(0)
-                AlertDialog.Builder(activity)
-                    .setTitle("默认标记类别")
-                    .setSingleChoiceItems(labels, index) { dialog, which ->
-                        prefs.edit().putString(SettingsKeys.DEFAULT_SUBMIT_CATEGORY, categories[which]).apply()
-                        refresh()
-                        dialog.dismiss()
-                    }
-                    .setNegativeButton("取消", null)
-                    .show()
-            }
-        }
-    }
-
-    /**
-     * 用户 ID 行。
-     *
-     * 构建/refresh **只读** prefs：旧实现会在构建期 `putString(USER_ID, generated)`
-     * （构建即写盘、点开设置页就凭空生成一个 ID）。现在没有 ID 时显示占位文案，
-     * 生成与落盘只发生在「重置」按钮回调里；提交路径仍有 [UserIdentityStore.getOrCreateUserId] 兜底生成。
-     */
-    private fun userIdRow(activity: Activity, prefs: SharedPreferences): View {
-        fun currentUserId(): String = prefs.getString(SettingsKeys.USER_ID, "").orEmpty()
-
-        val valueView = TextView(activity).apply {
-            textSize = 12f
-            setTextColor(Color.GRAY)
-            setPadding(0, dp(activity, 2), 0, 0)
-        }
-        fun refresh() {
-            valueView.text = currentUserId().takeIf { UserIdentityStore.isValidUserId(it) }
-                ?: "（未生成，点\"重置\"生成）"
-        }
-        refresh()
-
-        return LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(activity, 10), 0, dp(activity, 10))
-            addView(TextView(activity).apply {
-                text = "用户 ID"
-                textSize = 16f
-                setTextColor(primaryTextColor(activity))
-                setTypeface(typeface, Typeface.BOLD)
-            })
-            addView(valueView)
-            addView(LinearLayout(activity).apply {
-                orientation = LinearLayout.HORIZONTAL
-                addView(Button(activity).apply {
-                    text = "复制"
-                    setOnClickListener {
-                        val id = currentUserId()
-                        if (!UserIdentityStore.isValidUserId(id)) {
-                            Toast.makeText(activity, "尚未生成用户 ID，请先点\"重置\"", Toast.LENGTH_SHORT).show()
-                            return@setOnClickListener
-                        }
-                        val clipboard = activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("空降助手 userId", id))
-                        Toast.makeText(activity, "已复制", Toast.LENGTH_SHORT).show()
-                    }
-                })
-                addView(Button(activity).apply {
-                    text = "重置"
-                    setOnClickListener {
-                        prefs.edit().putString(SettingsKeys.USER_ID, UserIdentityStore.generateUserId()).apply()
-                        refresh()
-                        Toast.makeText(activity, "已重置", Toast.LENGTH_SHORT).show()
-                    }
-                })
-                addView(Button(activity).apply {
-                    text = "导入"
-                    setOnClickListener {
-                        showUserIdImportDialog(activity, prefs, ::refresh)
-                    }
-                })
-            })
-        }
-    }
-
-    private fun showUserIdImportDialog(activity: Activity, prefs: SharedPreferences, onSaved: () -> Unit) {
-        val edit = EditText(activity).apply {
-            setText(prefs.getString(SettingsKeys.USER_ID, ""))
-            inputType = InputType.TYPE_CLASS_TEXT
-            textSize = 14f
-        }
-        lateinit var dialog: AlertDialog
-        dialog = AlertDialog.Builder(activity)
-            .setTitle("导入用户 ID")
-            .setView(edit)
-            .setPositiveButton("保存", null)
-            .setNegativeButton("取消", null)
-            .create()
-        dialog.setOnShowListener {
-            val button = dialog.getButton(DialogInterface.BUTTON_POSITIVE)
-            button.setOnClickListener {
-                val userId = edit.text.toString().trim()
-                if (!UserIdentityStore.isValidUserId(userId)) {
-                    Toast.makeText(activity, "用户 ID 必须是 32 位十六进制", Toast.LENGTH_SHORT).show()
-                    return@setOnClickListener
-                }
-                prefs.edit().putString(SettingsKeys.USER_ID, userId).apply()
-                onSaved()
-                Toast.makeText(activity, "已保存", Toast.LENGTH_SHORT).show()
-                dialog.dismiss()
-            }
-        }
-        dialog.show()
-    }
-
-    private fun entryRow(activity: Activity, title: String, summary: String, onClick: () -> Unit): View {
-        return LinearLayout(activity).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(activity, 14), dp(activity, 13), dp(activity, 12), dp(activity, 13))
-            isClickable = true
-            isFocusable = true
-            background = selectableItemBackground(activity)
-            addView(LinearLayout(activity).apply {
-                orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                addView(TextView(activity).apply {
-                    text = title
-                    textSize = 16f
-                    setTextColor(BILI_TEXT_PRIMARY)
-                    setTypeface(typeface, Typeface.BOLD)
-                })
-                addView(TextView(activity).apply {
-                    text = summary
-                    textSize = 12f
-                    setTextColor(BILI_TEXT_SECONDARY)
-                    setPadding(0, dp(activity, 2), 0, 0)
-                })
-            })
-            addView(TextView(activity).apply {
-                text = "›"
-                textSize = 22f
-                setTextColor(BILI_PINK)
-            })
-            setOnClickListener { onClick() }
-        }
-    }
-
-    private fun sectionTitle(activity: Activity, title: String): TextView = TextView(activity).apply {
-        text = title
-        textSize = 16f
-        setTextColor(Color.parseColor("#FF6699"))
-        setPadding(0, dp(activity, 24), 0, dp(activity, 8))
-        setTypeface(typeface, Typeface.BOLD)
-    }
-
     private fun aboutItem(activity: Activity, title: String, value: String, onClick: (() -> Unit)? = null): View {
         val textCol = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
@@ -743,7 +382,7 @@ object SettingsScreenBuilder {
         return LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(activity, 14), dp(activity, 10), dp(activity, 12), dp(activity, 10))
+            setPadding(dp(activity, 6), dp(activity, 10), dp(activity, 6), dp(activity, 10))
             textCol.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             addView(textCol)
             if (onClick != null) {
@@ -767,45 +406,6 @@ object SettingsScreenBuilder {
         }
     }
 
-    private fun column(activity: Activity): LinearLayout = LinearLayout(activity).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(dp(activity, 20), dp(activity, 8), dp(activity, 20), dp(activity, 8))
-    }
-
-    private fun hint(activity: Activity, text: String): TextView = TextView(activity).apply {
-        this.text = text
-        textSize = 12f
-        setTextColor(Color.GRAY)
-        setPadding(0, 0, 0, dp(activity, 4))
-    }
-
-    /**
-     * 从主题解析文字色。
-     *
-     * 宿主内弹窗跑在宿主主题里（可能是深色），硬编码 `#212121` 在深色背景下几乎不可读。
-     * 优先取 [android.R.attr.textColorPrimary]，取不到再退回硬编码值。
-     * 强调色 `#FF6699` 是品牌色，不走主题解析。
-     */
-    private fun themedTextColor(activity: Activity, attr: Int, fallbackHex: String): Int {
-        val value = TypedValue()
-        if (activity.theme.resolveAttribute(attr, value, true)) {
-            if (value.type >= TypedValue.TYPE_FIRST_COLOR_INT && value.type <= TypedValue.TYPE_LAST_COLOR_INT) {
-                return value.data
-            }
-            if (value.resourceId != 0) {
-                val resolved = runCatching {
-                    activity.resources.getColor(value.resourceId, activity.theme)
-                }.getOrNull()
-                if (resolved != null) return resolved
-            }
-        }
-        return Color.parseColor(fallbackHex)
-    }
-
-    /** 分节标题/正文等主文字色（深色主题下自适应）。 */
-    private fun primaryTextColor(activity: Activity): Int =
-        themedTextColor(activity, android.R.attr.textColorPrimary, "#212121")
-
     private fun selectableItemBackground(activity: Activity): android.graphics.drawable.Drawable? {
         val tv = TypedValue()
         return if (activity.theme.resolveAttribute(android.R.attr.selectableItemBackground, tv, true)) {
@@ -813,6 +413,14 @@ object SettingsScreenBuilder {
         } else {
             null
         }
+    }
+
+    fun wrapScroll(activity: Activity, child: View): ScrollView = ScrollView(activity).apply {
+        layoutParams = ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        )
+        addView(child)
     }
 
     private fun dp(activity: Activity, value: Int): Int =
